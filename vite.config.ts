@@ -52,7 +52,7 @@
     },
     build: {
       target: 'esnext',
-      outDir: 'build',
+      outDir: 'dist',
       // Manual chunking to reduce the main bundle size and split heavy deps.
       rollupOptions: {
         output: {
