@@ -73,6 +73,16 @@
                   id.includes('react-jsx-dev-runtime')
                 )
                   return 'vendor_react';
+                // Some animation / motion libraries depend on React internals
+                // and caused a circular import between vendor chunks. Put
+                // them in the React vendor chunk as well to ensure proper
+                // initialization order.
+                if (
+                  id.includes('motion') ||
+                  id.includes('framer') ||
+                  id.includes('framer-motion')
+                )
+                  return 'vendor_react';
                 return 'vendor';
               }
           },
