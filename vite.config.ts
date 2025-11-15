@@ -58,13 +58,23 @@
         output: {
           manualChunks(id) {
             if (!id) return;
-            if (id.includes('node_modules')) {
-              if (id.includes('recharts')) return 'vendor_recharts';
-              if (id.includes('lucide-react')) return 'vendor_icons';
-              if (id.includes('@radix-ui')) return 'vendor_radix';
-              if (id.includes('react') || id.includes('react-dom')) return 'vendor_react';
-              return 'vendor';
-            }
+              if (id.includes('node_modules')) {
+                if (id.includes('recharts')) return 'vendor_recharts';
+                if (id.includes('lucide-react')) return 'vendor_icons';
+                if (id.includes('@radix-ui')) return 'vendor_radix';
+                // Keep React and its internal packages together to avoid circular runtime
+                // initialization issues (scheduler, react-is, react-jsx-runtime, etc.)
+                if (
+                  id.includes('react') ||
+                  id.includes('react-dom') ||
+                  id.includes('scheduler') ||
+                  id.includes('react-is') ||
+                  id.includes('react-jsx-runtime') ||
+                  id.includes('react-jsx-dev-runtime')
+                )
+                  return 'vendor_react';
+                return 'vendor';
+              }
           },
         },
       },
