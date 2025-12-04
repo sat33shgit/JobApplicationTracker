@@ -62,27 +62,11 @@
                 if (id.includes('recharts')) return 'vendor_recharts';
                 if (id.includes('lucide-react')) return 'vendor_icons';
                 if (id.includes('@radix-ui')) return 'vendor_radix';
-                // Keep React and its internal packages together to avoid circular runtime
-                // initialization issues (scheduler, react-is, react-jsx-runtime, etc.)
-                if (
-                  id.includes('react') ||
-                  id.includes('react-dom') ||
-                  id.includes('scheduler') ||
-                  id.includes('react-is') ||
-                  id.includes('react-jsx-runtime') ||
-                  id.includes('react-jsx-dev-runtime')
-                )
-                  return 'vendor_react';
-                // Some animation / motion libraries depend on React internals
-                // and caused a circular import between vendor chunks. Put
-                // them in the React vendor chunk as well to ensure proper
-                // initialization order.
-                if (
-                  id.includes('motion') ||
-                  id.includes('framer') ||
-                  id.includes('framer-motion')
-                )
-                  return 'vendor_react';
+                // Do not force React into a single manual chunk here. Let
+                // the bundler decide chunk placement for React and related
+                // packages to avoid initialization/order problems on some
+                // hosts (e.g., Vercel) where chunk loading order might vary.
+                // Heavy libraries are still separated above (recharts, lucide).
                 return 'vendor';
               }
           },
