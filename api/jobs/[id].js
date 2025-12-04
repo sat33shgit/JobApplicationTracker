@@ -31,22 +31,40 @@ module.exports = async function (req, res) {
         const attsRes = await db.query('SELECT * FROM attachments WHERE job_id = $1', [id]);
         const atts = attsRes.rows || [];
         // Load blob helper lazily so we don't require it for simple GETs
-        const blob = require('../blob');
-        for (const a of atts) {
-          try {
-            await blob.delete({ key: a.storage_key || a.key, url: a.url });
-          } catch (e) {
-            console.warn('Failed to delete blob for attachment', a.id, e && e.message);
+        let blob = null;
+        try {
+          blob = require('../blob');
+        } catch (re) {
+          // If blob helper can't be loaded, log and continue — attachments will be removed from DB.
+          console.warn('blob helper load failed, skipping provider deletes', re && re.message);
+        }
+
+        if (blob && typeof blob.delete === 'function') {
+          for (const a of atts) {
+            try {
+              await blob.delete({ key: a.storage_key || a.key, url: a.url });
+            } catch (e) {
+              console.warn('Failed to delete blob for attachment', a.id, e && e.message);
+            }
           }
         }
+
         // Remove attachment rows
         await db.query('DELETE FROM attachments WHERE job_id = $1', [id]);
       } catch (e) {
+        // Log full stack for troubleshooting on hosting platforms
         console.error('Failed to delete attachments for job', id, e && e.message);
+        if (e && e.stack) console.error(e.stack);
       }
 
-      await db.query('DELETE FROM jobs WHERE id=$1', [id]);
-      return res.status(204).end();
+      try {
+        await db.query('DELETE FROM jobs WHERE id=$1', [id]);
+        return res.status(204).end();
+      } catch (e) {
+        console.error('Failed to delete job', id, e && e.message);
+        if (e && e.stack) console.error(e.stack);
+        return res.status(500).json({ error: 'internal error', detail: process.env.NODE_ENV === 'production' ? undefined : (e && e.message) });
+      }
     }
 
     res.setHeader('Allow', 'GET, PUT, PATCH, DELETE');
