@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from "react";
 import SimpleModal from './components/SimpleModal';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
+import logger from './utils/logger';
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
 // Parse YYYY-MM-DD strings as local dates (new Date('YYYY-MM-DD') is treated as UTC,
 // which can shift the day depending on timezone). This ensures list view matches
@@ -129,7 +130,7 @@ export default function App() {
       try {
         const resp = await fetch('/api/jobs');
         if (!resp.ok) {
-          console.error('Failed to fetch jobs', resp.status);
+          logger.error('Failed to fetch jobs', resp.status);
           return;
         }
         const rows = await resp.json();
@@ -167,7 +168,7 @@ export default function App() {
           setApplications(apps);
         }
       } catch (err) {
-        console.error('Error loading jobs', err);
+        logger.error('Error loading jobs', err);
       }
     }
 
@@ -483,7 +484,7 @@ export default function App() {
       setCompanyDropdownOpen(false);
       setShowAddForm(false);
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       alert('Failed to save application. See console for details.');
     }
   };
@@ -530,7 +531,7 @@ export default function App() {
       setDeleteTarget(null);
       setConfirmOpen(false);
     } catch (err) {
-      console.error('delete failed', err && err.message);
+      logger.error('delete failed', err && err.message);
       alert('Failed to delete application. See console for details.');
     }
   };
@@ -593,11 +594,11 @@ export default function App() {
         </div>
       </header>
       {/* Delete confirmation modal (portal) */}
-      <SimpleModal open={confirmOpen} onClose={cancelDelete}>
+      <SimpleModal open={confirmOpen} onClose={cancelDelete} titleId="modal-title" descriptionId="modal-desc">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-semibold">Delete application</h3>
-            <p className="text-sm text-gray-600">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
+            <h3 id="modal-title" className="text-lg font-semibold">Delete application</h3>
+            <p id="modal-desc" className="text-sm text-gray-600">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
           </div>
           <button onClick={cancelDelete} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
