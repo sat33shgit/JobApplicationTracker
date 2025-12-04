@@ -16,11 +16,13 @@ module.exports = async function (req, res) {
     }
 
     try {
-      const createRes = await blob.createSignedUrl({ filename, contentType });
+      // blob.createSignedUrl expects (filename, opts)
+      const createRes = await blob.createSignedUrl(filename, { contentType });
       // createRes is expected to contain fields like { uploadURL, uploadUrl, url, key }
       return res.status(200).json(createRes || {});
     } catch (err) {
       console.error('create upload url failed', err && err.message);
+      if (err && err.stack) console.error(err.stack);
       // Surface error details to client to aid debugging (do not include secrets)
       return res.status(502).json({ error: 'failed to create upload url', detail: err && err.message });
     }
