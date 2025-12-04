@@ -1,7 +1,12 @@
 const db = require('../db');
 
 module.exports = async function (req, res) {
-  const id = req.url.split('/').pop();
+  const url = require('url');
+  const parsed = url.parse(req.url || req.headers['x-original-url'] || '');
+  const pathname = parsed.pathname || '';
+  let id = (pathname.split('/').filter(Boolean).pop() || '').toString();
+  // strip query/hash if present (e.g., "14?id=14") and decode
+  id = decodeURIComponent((id || '').split('?')[0].split('#')[0]);
   if (!id) return res.status(400).json({ error: 'missing id' });
 
   try {
