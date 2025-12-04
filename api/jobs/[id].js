@@ -26,6 +26,25 @@ module.exports = async function (req, res) {
     }
 
     if (req.method === 'DELETE') {
+      // Find attachments for this job and attempt to delete stored blobs/files
+      try {
+        const attsRes = await db.query('SELECT * FROM attachments WHERE job_id = $1', [id]);
+        const atts = attsRes.rows || [];
+        // Load blob helper lazily so we don't require it for simple GETs
+        const blob = require('../blob');
+        for (const a of atts) {
+          try {
+            await blob.delete({ key: a.storage_key || a.key, url: a.url });
+          } catch (e) {
+            console.warn('Failed to delete blob for attachment', a.id, e && e.message);
+          }
+        }
+        // Remove attachment rows
+        await db.query('DELETE FROM attachments WHERE job_id = $1', [id]);
+      } catch (e) {
+        console.error('Failed to delete attachments for job', id, e && e.message);
+      }
+
       await db.query('DELETE FROM jobs WHERE id=$1', [id]);
       return res.status(204).end();
     }

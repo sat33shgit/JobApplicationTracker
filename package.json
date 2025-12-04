@@ -5,6 +5,7 @@
   "scripts": {
     "migrate": "node scripts/migrate.js",
     "dev": "vite",
+    "dev:api": "node dev-server.js",
     "build": "vite build",
     "serve": "vite preview"
   },
