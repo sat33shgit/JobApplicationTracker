@@ -48,7 +48,9 @@ async function saveRemote(filename, buffer, opts = {}) {
 
   // If we don't have a signed upload URL, but a read/write token exists, request one from Vercel.
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
-  const enforce = (process.env.ENFORCE_REMOTE_UPLOADS || 'true') === 'true';
+  // By default do not enforce remote uploads. Set ENFORCE_REMOTE_UPLOADS=true to make
+  // missing or failing remote operations raise errors instead of falling back to local storage.
+  const enforce = (process.env.ENFORCE_REMOTE_UPLOADS || 'false') === 'true';
   if (!uploadUrl && rwToken) {
     const createUrl = 'https://api.vercel.com/v1/blob';
     const createRes = await fetch(createUrl, {
@@ -138,7 +140,9 @@ async function saveRemote(filename, buffer, opts = {}) {
 // Create signed upload URL without uploading bytes. Returns the create response
 async function createSignedUrl(filename, opts = {}) {
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
-  const enforce = (process.env.ENFORCE_REMOTE_UPLOADS || 'true') === 'true';
+  // See note above: default to not enforcing remote uploads so environments without
+  // blob tokens gracefully fall back to local storage or public prefix handling.
+  const enforce = (process.env.ENFORCE_REMOTE_UPLOADS || 'false') === 'true';
   if (!rwToken) {
     const msg = 'No read/write token available to create signed upload URL';
     if (enforce) throw new Error(msg);
