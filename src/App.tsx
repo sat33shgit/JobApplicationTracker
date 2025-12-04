@@ -368,7 +368,22 @@ export default function App() {
       const publicUrl = createBody.url || createBody.publicUrl || createBody.publicURL || null;
       const storageKey = createBody.key || createBody.storageKey || createBody.name || fileObj.name;
 
-      if (!uploadUrl) throw new Error('no upload URL returned by server');
+      if (!uploadUrl) {
+        // Fallback: server returned a URL but no signed upload URL (e.g., provider not configured).
+        // Use server-side upload endpoint which accepts base64 payload (`/api/uploads` expects contentBase64).
+        const buf = await fileObj.file.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const metaResp = await fetch('/api/uploads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type })
+        });
+        if (!metaResp.ok) {
+          const txt = await metaResp.text().catch(() => '<no body>');
+          throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
+        }
+        return await metaResp.json();
+      }
 
       // 2) PUT the file bytes directly to the signed URL
       const putRes = await fetch(uploadUrl, {
