@@ -21,8 +21,11 @@ async function createJob(req, res) {
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to create job' });
+    console.error('createJob error:', err && err.message);
+    if (err && err.stack) console.error(err.stack);
+    // include request body in non-production to aid debugging (do not leak in prod)
+    if (process.env.NODE_ENV !== 'production') console.error('createJob body:', req.body);
+    res.status(500).json({ error: 'Failed to create job', detail: process.env.NODE_ENV === 'production' ? undefined : (err && err.message) });
   }
 }
 
