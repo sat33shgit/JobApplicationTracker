@@ -1,122 +1,34 @@
 import React from 'react';
 import { useState, useEffect, useRef } from "react";
+import SimpleModal from './components/SimpleModal';
+import { normalizeDateToInput, getTodayISO } from './utils/date';
+import logger from './utils/logger';
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
+// Parse YYYY-MM-DD strings as local dates (new Date('YYYY-MM-DD') is treated as UTC,
+// which can shift the day depending on timezone). This ensures list view matches
+// the date input and DB values.
 const formatDisplayDate = (isoDate: string) => {
-  const date = new Date(isoDate)
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = date.toLocaleString('en-US', { month: 'short' })
-  const year = date.getFullYear()
-  return `${day}-${month}-${year}`
-}
+  let date: Date;
+  // If value is 'YYYY-MM-DD', construct local date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    const [y, m, d] = isoDate.split('-').map(Number);
+    date = new Date(y, m - 1, d);
+  } else {
+    date = new Date(isoDate);
+  }
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = date.toLocaleString('en-US', { month: 'short' });
+  const year = date.getFullYear();
+  return `${day}-${month}-${year}`;
+};
 import { motion } from "motion/react";
+// Using a simple in-app modal for delete confirmation (avoids ref/portal issues)
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight } from "lucide-react";
+import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 
-// Mock data for companies
-const initialCompanies = [
-  { id: 1, name: "Google" },
-  { id: 2, name: "Microsoft" },
-  { id: 3, name: "Amazon" },
-  { id: 4, name: "Apple" },
-  { id: 5, name: "Meta" },
-];
-
-// Mock data for applications
-const initialApplications = [
-  { 
-    id: 1, 
-    companyId: 1, 
-    role: "Frontend Developer", 
-    dateApplied: "2023-05-15", 
-    status: "Applied", 
-    notes: "Applied through company website",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" },
-      { name: "cover_letter.pdf", type: "coverLetter", url: "#" }
-    ]
-  },
-  { 
-    id: 2, 
-    companyId: 2, 
-    role: "Full Stack Engineer", 
-    dateApplied: "2023-05-18", 
-    status: "Interview", 
-    notes: "First round scheduled for next week",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" }
-    ]
-  },
-  { 
-    id: 3, 
-    companyId: 3, 
-    role: "Software Engineer", 
-    dateApplied: "2023-05-20", 
-    status: "Rejected", 
-    notes: "Received rejection email",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" },
-      { name: "job_description.pdf", type: "jobDescription", url: "#" }
-    ]
-  },
-  { 
-    id: 4, 
-    companyId: 4, 
-    role: "iOS Developer", 
-    dateApplied: "2023-05-22", 
-    status: "Applied", 
-    notes: "Applied through LinkedIn",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" }
-    ]
-  },
-  { 
-    id: 5, 
-    companyId: 5, 
-    role: "React Developer", 
-    dateApplied: "2023-05-25", 
-    status: "Interview", 
-    notes: "Technical interview scheduled",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" },
-      { name: "cover_letter.pdf", type: "coverLetter", url: "#" }
-    ]
-  },
-  { 
-    id: 6, 
-    companyId: 1, 
-    role: "UX Designer", 
-    dateApplied: "2023-05-28", 
-    status: "Applied", 
-    notes: "Submitted portfolio",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" },
-      { name: "portfolio.pdf", type: "other", url: "#" }
-    ]
-  },
-  { 
-    id: 7, 
-    companyId: 3, 
-    role: "Data Scientist", 
-    dateApplied: "2023-06-01", 
-    status: "Applied", 
-    notes: "Applied through referral",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" }
-    ]
-  },
-  { 
-    id: 8, 
-    companyId: 2, 
-    role: "Product Manager", 
-    dateApplied: "2023-06-05", 
-    status: "Interview", 
-    notes: "Second round scheduled",
-    files: [
-      { name: "resume.pdf", type: "resume", url: "#" },
-      { name: "cover_letter.pdf", type: "coverLetter", url: "#" }
-    ]
-  },
-];
+// Initial empty arrays — real data will be loaded from the API on mount
+const initialCompanies: Array<{ id: number; name: string }> = [];
+const initialApplications: Array<any> = [];
 
 // Status options
 const statusOptions = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
@@ -205,13 +117,73 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
-  const [stats, setStats] = useState(generateStats(initialApplications));
+  const stats = React.useMemo(() => generateStats(applications), [applications]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // SimpleModal moved to `src/components/SimpleModal.tsx`
+
+  // Load jobs from the API on first render and map them into the app's shape
+  useEffect(() => {
+    let mounted = true;
+    async function loadJobs() {
+      try {
+        const resp = await fetch('/api/jobs');
+        if (!resp.ok) {
+          logger.error('Failed to fetch jobs', resp.status);
+          return;
+        }
+        const rows = await resp.json();
+
+        // Build companies map from unique company names
+        const companiesMap = new Map();
+        let nextCompanyId = 1;
+        const apps = rows.map((r) => {
+          const companyName = r.company || 'Unknown';
+          if (!companiesMap.has(companyName)) {
+            companiesMap.set(companyName, nextCompanyId++);
+          }
+          const companyId = companiesMap.get(companyName);
+
+          const statusRaw = r.status || 'applied';
+          const status = typeof statusRaw === 'string' ? (statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1)) : statusRaw;
+
+          // Normalize applied_date to YYYY-MM-DD so daily stats match
+          const dateApplied = normalizeDateToInput(r.applied_date);
+          return {
+            id: r.id,
+            companyId,
+            role: r.title || '',
+            dateApplied,
+            status,
+            notes: r.metadata?.notes || '',
+            files: r.metadata?.files || [],
+            statusNotes: r.status_notes || ''
+          };
+        });
+
+        const companiesArr = Array.from(companiesMap.entries()).map(([name, id]) => ({ id, name }));
+
+        if (mounted) {
+          setCompanies(companiesArr);
+          setApplications(apps);
+        }
+      } catch (err) {
+        logger.error('Error loading jobs', err);
+      }
+    }
+
+    loadJobs();
+    return () => { mounted = false; };
+  }, []);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [companyQuery, setCompanyQuery] = useState('');
+  const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [newApplication, setNewApplication] = useState({
     companyId: "",
     newCompany: "",
     role: "",
-    dateApplied: new Date().toISOString().split('T')[0],
+    dateApplied: getTodayISO(),
     status: "Applied",
     notes: "",
     files: []
@@ -220,14 +192,15 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTimeframe, setSelectedTimeframe] = useState("daily");
   const [editingId, setEditingId] = useState(null);
+  const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef(null);
-  const todayISO = new Date().toISOString().split('T')[0];
+  const todayISO = getTodayISO();
 
   // Update stats when applications change
   useEffect(() => {
-    setStats(generateStats(applications));
+    // stats computed via useMemo now; no-op
   }, [applications]);
 
   // Handle sorting
@@ -326,15 +299,15 @@ export default function App() {
   const handleFileUpload = (e, fileType) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    
-    // In a real app, you would upload these files to Vercel Blob
-    // Here we'll just create mock file objects
+
+    // Store File objects and metadata; actual upload will happen on submit
     const newFiles = files.map(file => ({
+      file,
       name: file.name,
       type: fileType,
-      url: URL.createObjectURL(file) // This creates a temporary URL
+      url: null // will be populated after upload
     }));
-    
+
     setNewApplication(prev => ({
       ...prev,
       files: [...prev.files, ...newFiles]
@@ -342,7 +315,7 @@ export default function App() {
   };
 
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     // simple validation
     const newErrors: Record<string, string> = {};
@@ -355,88 +328,291 @@ export default function App() {
       setErrors(newErrors);
       return;
     }
-    
+
     let companyId = parseInt(newApplication.companyId);
-    
+
     // If new company is being added
     if (newApplication.companyId === "new" && newApplication.newCompany.trim()) {
       const newCompany = {
         id: companies.length + 1,
         name: newApplication.newCompany.trim()
       };
-      setCompanies([...companies, newCompany]);
+      setCompanies(prev => [...prev, newCompany]);
       companyId = newCompany.id;
     }
-    
-    if (editingId) {
-      // Update existing application
-      setApplications(applications.map(app => 
-        app.id === editingId ? {
+
+    // Build payload for API (don't include File objects; attachments upload happens after job is created/updated)
+    const payload = {
+      title: newApplication.role,
+      company: companies.find(c => c.id === companyId)?.name || (newApplication.newCompany || null),
+      status: newApplication.status,
+      applied_date: newApplication.dateApplied,
+      metadata: {
+        notes: newApplication.notes || null,
+        files: []
+      }
+    };
+
+    // helper: create signed URL (server will call Vercel) and PUT file bytes, then persist metadata
+    const uploadFileToServer = async (jobId, fileObj) => {
+      // 1) request signed upload URL from server
+      const createResp = await fetch('/api/uploads/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: fileObj.name, contentType: fileObj.file.type })
+      });
+      if (!createResp.ok) {
+        throw new Error('failed to create upload URL');
+      }
+      const createBody = await createResp.json();
+
+      const uploadUrl = createBody.uploadURL || createBody.uploadUrl || createBody.signedUrl || createBody.upload_url || createBody.url;
+      const publicUrl = createBody.url || createBody.publicUrl || createBody.publicURL || null;
+      const storageKey = createBody.key || createBody.storageKey || createBody.name || fileObj.name;
+
+      if (!uploadUrl) {
+        // Fallback: server returned a URL but no signed upload URL (e.g., provider not configured).
+        // Use server-side upload endpoint which accepts base64 payload (`/api/uploads` expects contentBase64).
+        const buf = await fileObj.file.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const metaResp = await fetch('/api/uploads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type })
+        });
+        if (!metaResp.ok) {
+          const txt = await metaResp.text().catch(() => '<no body>');
+          throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
+        }
+        return await metaResp.json();
+      }
+
+      // If the signed upload URL is cross-origin, some providers block browser PUTs
+      // due to CORS preflight restrictions. In that case, perform the PUT server-side
+      // by sending the bytes to `/api/uploads` with `uploadUrl` and let the server
+      // execute the PUT. This avoids CORS issues for providers that don't allow
+      // browser-side uploads.
+      let usedUploadUrl = uploadUrl;
+      let uploadedViaServer = false;
+      try {
+        const uploadOrigin = uploadUrl ? new URL(uploadUrl).origin : null;
+        if (uploadOrigin && uploadOrigin !== window.location.origin) {
+          // server-side upload
+          const buf = await fileObj.file.arrayBuffer();
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+          const metaResp = await fetch('/api/uploads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type, uploadUrl })
+          });
+          if (!metaResp.ok) {
+            const txt = await metaResp.text().catch(() => '<no body>');
+            throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
+          }
+          const savedMeta = await metaResp.json();
+          uploadedViaServer = true;
+          return savedMeta;
+        }
+      } catch (e) {
+        // If URL parsing fails or server-side upload fails, fall back to browser PUT below
+        console.warn('server-side upload attempt failed, will try browser PUT', e);
+      }
+
+      // 2) PUT the file bytes directly to the signed URL (browser)
+      const putRes = await fetch(usedUploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': fileObj.file.type },
+        body: fileObj.file
+      });
+      if (!putRes.ok) {
+        const text = await putRes.text().catch(()=>'<no body>');
+        throw new Error(`upload failed during PUT: ${putRes.status} ${text}`);
+      }
+
+      // 3) persist attachment metadata by posting to /api/uploads (metadata mode)
+      const metaResp = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, filename: fileObj.name, url: publicUrl || uploadUrl, storageKey, size: fileObj.file.size, contentType: fileObj.file.type })
+      });
+      if (!metaResp.ok) throw new Error('failed to persist attachment metadata');
+      return await metaResp.json();
+    };
+
+    try {
+      if (editingId) {
+        // Update existing application on server
+        const resp = await fetch(`/api/jobs/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error('Failed to update');
+        const updated = await resp.json();
+        // After updating job, upload any new files and attach them
+        const filesToUpload = newApplication.files.filter(f => f && f.file);
+        let attachments = [];
+        if (filesToUpload.length) {
+          attachments = await Promise.all(filesToUpload.map(f => uploadFileToServer(updated.id, f)));
+          // Map attachments into metadata.files shape
+          const attachMeta = attachments.map(a => ({ name: a.filename, url: a.url, id: a.id }));
+          // patch job metadata to include attachments
+          await fetch(`/api/jobs/${updated.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ metadata: { ...updated.metadata, files: attachMeta } })
+          });
+          updated.metadata = { ...updated.metadata, files: attachMeta };
+        }
+
+        setApplications(applications.map(app => app.id === editingId ? {
           ...app,
           companyId,
-          role: newApplication.role,
-          dateApplied: newApplication.dateApplied,
-          status: newApplication.status,
-          notes: newApplication.notes,
-          files: newApplication.files
-        } : app
-      ));
-      setEditingId(null);
-    } else {
-      // Add new application
-      const newApp = {
-        id: applications.length + 1,
-        companyId,
-        role: newApplication.role,
-        dateApplied: newApplication.dateApplied,
-        status: newApplication.status,
-        notes: newApplication.notes,
-        files: newApplication.files
-      };
-      setApplications([...applications, newApp]);
-      
-      // Auto-expand the company group when adding a new application
-      setExpandedCompanies(prev => ({
-        ...prev,
-        [companyId]: true
-      }));
+          role: updated.title,
+              dateApplied: normalizeDateToInput(updated.applied_date),
+          status: updated.status,
+          notes: updated.metadata?.notes || '',
+          files: updated.metadata?.files || [],
+          statusNotes: updated.status_notes || ''
+        } : app));
+        setEditingId(null);
+      } else {
+        // Create new job on server
+        const resp = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error('Failed to create');
+        const created = await resp.json();
+        // Upload files (if any) and attach to created job
+        const filesToUpload = newApplication.files.filter(f => f && f.file);
+        let attachments = [];
+        if (filesToUpload.length) {
+          attachments = await Promise.all(filesToUpload.map(f => uploadFileToServer(created.id, f)));
+          const attachMeta = attachments.map(a => ({ name: a.filename, url: a.url, id: a.id }));
+          // update job metadata with uploaded files
+          await fetch(`/api/jobs/${created.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ metadata: { ...(created.metadata || {}), files: attachMeta } })
+          });
+          created.metadata = { ...(created.metadata || {}), files: attachMeta };
+        }
+
+        const newApp = {
+          id: created.id,
+          companyId,
+          role: created.title,
+          dateApplied: normalizeDateToInput(created.applied_date),
+          status: created.status,
+          notes: created.metadata?.notes || '',
+          files: created.metadata?.files || [],
+          statusNotes: created.status_notes || ''
+        };
+
+        setApplications(prev => [...prev, newApp]);
+
+        // Auto-expand the company group when adding a new application
+        setExpandedCompanies(prev => ({
+          ...prev,
+          [companyId]: true
+        }));
+      }
+
+      // Reset form
+      setNewApplication({
+        companyId: "",
+        newCompany: "",
+        role: "",
+        dateApplied: getTodayISO(),
+        status: "Applied",
+        notes: "",
+        files: []
+      });
+      setCompanyQuery('');
+      setCompanyDropdownOpen(false);
+      setShowAddForm(false);
+    } catch (err) {
+      logger.error(err);
+      alert('Failed to save application. See console for details.');
     }
-    
-    // Reset form
-    setNewApplication({
-      companyId: "",
-      newCompany: "",
-      role: "",
-      dateApplied: new Date().toISOString().split('T')[0],
-      status: "Applied",
-      notes: "",
-      files: []
-    });
-    setShowAddForm(false);
   };
 
   // Handle edit application
   const handleEdit = (id) => {
     const app = applications.find(a => a.id === id);
     if (!app) return;
+    const companyName = getCompanyName(app.companyId);
     
     setNewApplication({
       companyId: app.companyId.toString(),
       newCompany: "",
       role: app.role,
-      dateApplied: app.dateApplied,
+      dateApplied: normalizeDateToInput(app.dateApplied),
       status: app.status,
       notes: app.notes,
-      files: app.files
+      files: app.files,
+      statusNotes: app.statusNotes || ''
     });
+    // prefill combo input
+    setCompanyQuery(companyName);
     
     setEditingId(id);
     setShowAddForm(true);
   };
 
-  // Handle delete application
+  // Handle view (read-only) application
+  const handleView = (id) => {
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    const companyName = getCompanyName(app.companyId);
+
+    setNewApplication({
+      companyId: app.companyId.toString(),
+      newCompany: "",
+      role: app.role,
+      dateApplied: normalizeDateToInput(app.dateApplied),
+      status: app.status,
+      notes: app.notes,
+      files: app.files,
+      statusNotes: app.statusNotes || ''
+    });
+    setCompanyQuery(companyName);
+
+    setViewingId(id);
+    setEditingId(null);
+    setShowAddForm(true);
+  };
+
+  // Handle delete application (open confirmation)
   const handleDelete = (id) => {
-    setApplications(applications.filter(app => app.id !== id));
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    setDeleteTarget(app);
+    setConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/jobs/${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`Delete failed: ${res.status} ${txt}`);
+      }
+      setApplications(prev => prev.filter(a => a.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setConfirmOpen(false);
+    } catch (err) {
+      logger.error('delete failed', err && err.message);
+      alert('Failed to delete application. See console for details.');
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteTarget(null);
+    setConfirmOpen(false);
   };
 
   // Handle export to Excel
@@ -491,6 +667,35 @@ export default function App() {
           </div>
         </div>
       </header>
+      {/* Delete confirmation modal (portal) */}
+      <SimpleModal open={confirmOpen} onClose={cancelDelete} titleId="modal-title" descriptionId="modal-desc">
+        <div className="flex justify-between items-start">
+          <div>
+            <h3 id="modal-title" className="text-lg font-semibold">Delete application</h3>
+            <p id="modal-desc" className="text-sm text-gray-600">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
+          </div>
+          <button onClick={cancelDelete} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="mt-4">
+          {deleteTarget && (
+            <div>
+              <p className="font-medium">{getCompanyName(deleteTarget.companyId)} — {deleteTarget.role}</p>
+              <p className="text-sm text-gray-500">Date Applied: {formatDisplayDate(deleteTarget.dateApplied)}</p>
+            </div>
+          )}
+        </div>
+        <div className="mt-6 flex justify-end items-center gap-3">
+          <button
+            onClick={confirmDelete}
+            className="px-4 py-2 rounded text-white"
+            style={{ backgroundColor: '#dc2626', marginRight: '12px' }}
+            aria-label="Confirm delete"
+          >
+            Delete
+          </button>
+          <button className="px-4 py-2 rounded border bg-white" onClick={cancelDelete}>Cancel</button>
+        </div>
+      </SimpleModal>
 
       {/* Main content */}
       <main className="flex-grow p-6">
@@ -666,7 +871,7 @@ export default function App() {
                       <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                     </div>
                     <button 
-                      onClick={() => setShowAddForm(true)}
+                      onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
                       className="flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                     >
                       <Plus className="h-5 w-5" />
@@ -824,6 +1029,13 @@ export default function App() {
                                   </td>
                                   <td className="px-6 py-3 text-sm font-medium">
                                     <div className="flex space-x-2">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleView(app.id); }}
+                                        className="text-gray-600 hover:text-gray-900"
+                                        title="View"
+                                      >
+                                        <Eye className="h-5 w-5" />
+                                      </button>
                                       <button 
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -863,24 +1075,27 @@ export default function App() {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
               >
-                <div className="p-6">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">{editingId ? "Edit Application" : "Add New Application"}</h2>
+                <div className="p-6 overflow-y-auto flex-1 pb-20">
+                    <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold">{viewingId ? "View Application" : (editingId ? "Edit Application" : "Add New Application")}</h2>
                     <button 
                       onClick={() => {
                         setShowAddForm(false);
                         setEditingId(null);
+                        setViewingId(null);
                         setNewApplication({
                           companyId: "",
                           newCompany: "",
                           role: "",
-                          dateApplied: new Date().toISOString().split('T')[0],
+                          dateApplied: getTodayISO(),
                           status: "Applied",
                           notes: "",
                           files: []
                         });
+                        setCompanyQuery('');
+                        setCompanyDropdownOpen(false);
                       }}
                       className="text-gray-500 hover:text-gray-700"
                     >
@@ -888,22 +1103,66 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
+                  <form onSubmit={viewingId ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
+                    <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
-                      <select
-                        name="companyId"
-                        value={newApplication.companyId}
-                        onChange={handleInputChange}
-                        className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
-                        aria-required="true"
-                      >
-                        <option value="">Select a company *</option>
-                        {companies.map(company => (
-                          <option key={company.id} value={company.id}>{company.name}</option>
-                        ))}
-                        <option value="new">+ Add new company</option>
-                      </select>
+                      <div>
+                        <input
+                          type="text"
+                          name="companyQuery"
+                          value={companyQuery}
+                          onChange={(e) => {
+                            setCompanyQuery(e.target.value);
+                            setCompanyDropdownOpen(true);
+                            // clear selection while typing
+                            setNewApplication(prev => ({ ...prev, companyId: '' }));
+                          }}
+                          onFocus={() => setCompanyDropdownOpen(true)}
+                          placeholder="Type to search or add a company"
+                          readOnly={Boolean(viewingId)}
+                          className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
+                          aria-required="true"
+                        />
+                      </div>
+
+                      {companyDropdownOpen && !viewingId && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
+                          <button
+                            type="button"
+                            onMouseDown={(e) => { e.preventDefault(); /* prevent blur */ }}
+                            onClick={() => {
+                              // choose add new company
+                              setNewApplication(prev => ({ ...prev, companyId: 'new' }));
+                              setCompanyQuery('');
+                              setCompanyDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                          >
+                            + Add new company
+                          </button>
+
+                          {companies.filter(c => c.name.toLowerCase().includes(companyQuery.toLowerCase())).map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); }}
+                              onClick={() => {
+                                setNewApplication(prev => ({ ...prev, companyId: c.id.toString(), newCompany: '' }));
+                                setCompanyQuery(c.name);
+                                setCompanyDropdownOpen(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+
+                          {companies.filter(c => c.name.toLowerCase().includes(companyQuery.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-gray-500">No matching companies</div>
+                          )}
+                        </div>
+                      )}
+
                       {errors.companyId && <p className="text-red-500 text-xs mt-1">{errors.companyId}</p>}
                     </div>
                     
@@ -916,6 +1175,7 @@ export default function App() {
                           placeholder="Enter company name *"
                           value={newApplication.newCompany}
                           onChange={handleInputChange}
+                          readOnly={Boolean(viewingId)}
                           className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
@@ -931,6 +1191,7 @@ export default function App() {
                         placeholder="e.g., Frontend Engineer *"
                         value={newApplication.role}
                         onChange={handleInputChange}
+                        readOnly={Boolean(viewingId)}
                         className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -945,6 +1206,7 @@ export default function App() {
                         max={todayISO}
                         value={newApplication.dateApplied}
                         onChange={handleInputChange}
+                        disabled={Boolean(viewingId)}
                         className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -957,6 +1219,7 @@ export default function App() {
                         name="status"
                         value={newApplication.status}
                         onChange={handleInputChange}
+                        disabled={Boolean(viewingId)}
                         className="w-full border rounded-md px-3 py-2"
                         required
                       >
@@ -973,9 +1236,25 @@ export default function App() {
                         placeholder="e.g., applied via LinkedIn"
                         value={newApplication.notes}
                         onChange={handleInputChange}
+                        readOnly={Boolean(viewingId)}
                         className="w-full border rounded-md px-3 py-2 h-24"
                       />
                     </div>
+                    
+                    {(editingId || viewingId) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Status History</label>
+                        <textarea
+                          name="statusNotes"
+                          value={newApplication.statusNotes || ''}
+                          readOnly
+                          rows={6}
+                          wrap="soft"
+                          style={{ whiteSpace: 'pre-wrap' }}
+                          className="w-full border rounded-md px-3 py-2 h-40 bg-gray-50 text-sm text-gray-700 resize-none overflow-y-auto"
+                        />
+                      </div>
+                    )}
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Files</label>
@@ -986,108 +1265,145 @@ export default function App() {
                               <FileText className="h-4 w-4 mr-2 text-gray-500" />
                               <span className="text-sm">{file.name}</span>
                             </div>
-                            <button 
-                              type="button"
-                              onClick={() => removeFile(file.name)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                            {!viewingId && (
+                              <button 
+                                type="button"
+                                onClick={() => removeFile(file.name)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
-                            <input
-                              type="file"
-                              ref={fileInputRef}
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'resume')}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Resume</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  ref={fileInputRef}
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'resume')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Resume</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'coverLetter')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Cover Letter</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'coverLetter')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Cover Letter</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'jobDescription')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Job Description</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'jobDescription')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Job Description</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'applicationDoc')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Application Doc</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'applicationDoc')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Application Doc</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex justify-end space-x-2 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddForm(false);
-                          setEditingId(null);
-                        }}
-                        className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                      >
-                        {editingId ? "Update" : "Save"}
-                      </button>
+                    <div className="sticky bottom-0 bg-white border-t py-3 flex justify-end space-x-2">
+                      {viewingId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddForm(false);
+                            setViewingId(null);
+                            setCompanyQuery('');
+                            setCompanyDropdownOpen(false);
+                          }}
+                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                        >
+                          Close
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddForm(false);
+                              setEditingId(null);
+                              setCompanyQuery('');
+                              setCompanyDropdownOpen(false);
+                            }}
+                            className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                          >
+                            {editingId ? "Update" : "Save"}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </form>
                 </div>

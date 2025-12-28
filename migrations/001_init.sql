@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   location TEXT,
   salary TEXT,
   metadata JSONB,
+  status_notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
