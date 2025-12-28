@@ -45,7 +45,7 @@ if (connectionString) {
 
     // Insert job
     if (tl.startsWith('insert into jobs')) {
-      const [title, company, status, stage, applied_date, url, location, salary, metadata] = params || [];
+      const [title, company, status, stage, applied_date, url, location, salary, metadata, status_notes] = params || [];
       const job = {
         id: nextJobId++,
         title: title || null,
@@ -57,6 +57,7 @@ if (connectionString) {
         location: location || null,
         salary: salary || null,
         metadata: metadata || null,
+        status_notes: status_notes || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };

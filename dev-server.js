@@ -96,7 +96,7 @@ async function routeApi(req, res) {
   try {
     // Attach body parsing
     const body = await parseJSONBody(req).catch(err => {
-      console.error('body parse error', err);
+      if (process.env.NODE_ENV !== 'production') console.error('body parse error', err);
       return null;
     });
 
@@ -180,7 +180,7 @@ async function routeApi(req, res) {
 
     // other api resources can be added similarly
   } catch (err) {
-    console.error('API handler error', err);
+    if (process.env.NODE_ENV !== 'production') console.error('API handler error', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: 'internal server error' }));
@@ -206,7 +206,5 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not Found' }));
 });
 
-const PORT = process.env.DEV_API_PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Dev API server listening on http://localhost:${PORT}`);
-});
+const PORT = process.env.DEV_API_PORT || 3002;
+server.listen(PORT);

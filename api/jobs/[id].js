@@ -19,10 +19,36 @@ module.exports = async function (req, res) {
     if (req.method === 'PUT' || req.method === 'PATCH') {
       const fields = req.body || {};
       const allowed = ['title','company','status','stage','applied_date','url','location','salary','metadata'];
+
+      // If status is changing, fetch existing job to compare and append to status_notes
+      let existing = null;
+      if ('status' in fields) {
+        const ex = await db.query('SELECT * FROM jobs WHERE id = $1', [id]);
+        if (ex.rowCount === 1) existing = ex.rows[0];
+      }
+
       const sets = [];
       const values = [];
       let idx = 1;
       for (const k of allowed) if (k in fields) { sets.push(`${k}=$${idx++}`); values.push(fields[k]); }
+
+      // If status changed, append a new status note entry
+      if (existing && ('status' in fields)) {
+        const prevStatus = existing.status;
+        const newStatus = fields.status;
+        if (String(prevStatus) !== String(newStatus)) {
+            // Use date-only in DD-MMM-YYYY and place notes on the next line
+            const _d = new Date();
+            const dateOnly = `${String(_d.getDate()).padStart(2,'0')}-${_d.toLocaleString('en-US',{month:'short'})}-${_d.getFullYear()}`;
+            // Prefer notes in incoming metadata, otherwise use existing.metadata.notes
+            const noteText = (fields.metadata && fields.metadata.notes) ? fields.metadata.notes : (existing.metadata && existing.metadata.notes) ? existing.metadata.notes : '';
+            const entry = `${dateOnly} | ${newStatus}\n${noteText}`;
+            const updatedNotes = existing.status_notes ? `${existing.status_notes}\n---\n${entry}` : entry;
+          sets.push(`status_notes=$${idx++}`);
+          values.push(updatedNotes);
+        }
+      }
+
       if (sets.length === 0) return res.status(400).json({ error: 'no updatable fields provided' });
       values.push(id);
       const q = `UPDATE jobs SET ${sets.join(', ')} WHERE id=$${idx} RETURNING *`;

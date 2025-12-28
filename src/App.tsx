@@ -24,7 +24,7 @@ const formatDisplayDate = (isoDate: string) => {
 import { motion } from "motion/react";
 // Using a simple in-app modal for delete confirmation (avoids ref/portal issues)
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight } from "lucide-react";
+import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 
 // Initial empty arrays — real data will be loaded from the API on mount
 const initialCompanies: Array<{ id: number; name: string }> = [];
@@ -117,7 +117,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
-  const [stats, setStats] = useState(generateStats(initialApplications));
+  const stats = React.useMemo(() => generateStats(applications), [applications]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -157,7 +157,8 @@ export default function App() {
             dateApplied,
             status,
             notes: r.metadata?.notes || '',
-            files: r.metadata?.files || []
+            files: r.metadata?.files || [],
+            statusNotes: r.status_notes || ''
           };
         });
 
@@ -191,6 +192,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTimeframe, setSelectedTimeframe] = useState("daily");
   const [editingId, setEditingId] = useState(null);
+  const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef(null);
@@ -198,7 +200,7 @@ export default function App() {
 
   // Update stats when applications change
   useEffect(() => {
-    setStats(generateStats(applications));
+    // stats computed via useMemo now; no-op
   }, [applications]);
 
   // Handle sorting
@@ -385,8 +387,39 @@ export default function App() {
         return await metaResp.json();
       }
 
-      // 2) PUT the file bytes directly to the signed URL
-      const putRes = await fetch(uploadUrl, {
+      // If the signed upload URL is cross-origin, some providers block browser PUTs
+      // due to CORS preflight restrictions. In that case, perform the PUT server-side
+      // by sending the bytes to `/api/uploads` with `uploadUrl` and let the server
+      // execute the PUT. This avoids CORS issues for providers that don't allow
+      // browser-side uploads.
+      let usedUploadUrl = uploadUrl;
+      let uploadedViaServer = false;
+      try {
+        const uploadOrigin = uploadUrl ? new URL(uploadUrl).origin : null;
+        if (uploadOrigin && uploadOrigin !== window.location.origin) {
+          // server-side upload
+          const buf = await fileObj.file.arrayBuffer();
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+          const metaResp = await fetch('/api/uploads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type, uploadUrl })
+          });
+          if (!metaResp.ok) {
+            const txt = await metaResp.text().catch(() => '<no body>');
+            throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
+          }
+          const savedMeta = await metaResp.json();
+          uploadedViaServer = true;
+          return savedMeta;
+        }
+      } catch (e) {
+        // If URL parsing fails or server-side upload fails, fall back to browser PUT below
+        console.warn('server-side upload attempt failed, will try browser PUT', e);
+      }
+
+      // 2) PUT the file bytes directly to the signed URL (browser)
+      const putRes = await fetch(usedUploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': fileObj.file.type },
         body: fileObj.file
@@ -439,7 +472,8 @@ export default function App() {
               dateApplied: normalizeDateToInput(updated.applied_date),
           status: updated.status,
           notes: updated.metadata?.notes || '',
-          files: updated.metadata?.files || []
+          files: updated.metadata?.files || [],
+          statusNotes: updated.status_notes || ''
         } : app));
         setEditingId(null);
       } else {
@@ -473,7 +507,8 @@ export default function App() {
           dateApplied: normalizeDateToInput(created.applied_date),
           status: created.status,
           notes: created.metadata?.notes || '',
-          files: created.metadata?.files || []
+          files: created.metadata?.files || [],
+          statusNotes: created.status_notes || ''
         };
 
         setApplications(prev => [...prev, newApp]);
@@ -517,12 +552,36 @@ export default function App() {
       dateApplied: normalizeDateToInput(app.dateApplied),
       status: app.status,
       notes: app.notes,
-      files: app.files
+      files: app.files,
+      statusNotes: app.statusNotes || ''
     });
     // prefill combo input
     setCompanyQuery(companyName);
     
     setEditingId(id);
+    setShowAddForm(true);
+  };
+
+  // Handle view (read-only) application
+  const handleView = (id) => {
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    const companyName = getCompanyName(app.companyId);
+
+    setNewApplication({
+      companyId: app.companyId.toString(),
+      newCompany: "",
+      role: app.role,
+      dateApplied: normalizeDateToInput(app.dateApplied),
+      status: app.status,
+      notes: app.notes,
+      files: app.files,
+      statusNotes: app.statusNotes || ''
+    });
+    setCompanyQuery(companyName);
+
+    setViewingId(id);
+    setEditingId(null);
     setShowAddForm(true);
   };
 
@@ -970,6 +1029,13 @@ export default function App() {
                                   </td>
                                   <td className="px-6 py-3 text-sm font-medium">
                                     <div className="flex space-x-2">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleView(app.id); }}
+                                        className="text-gray-600 hover:text-gray-900"
+                                        title="View"
+                                      >
+                                        <Eye className="h-5 w-5" />
+                                      </button>
                                       <button 
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -1009,15 +1075,16 @@ export default function App() {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
               >
-                <div className="p-6">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">{editingId ? "Edit Application" : "Add New Application"}</h2>
+                <div className="p-6 overflow-y-auto flex-1 pb-20">
+                    <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold">{viewingId ? "View Application" : (editingId ? "Edit Application" : "Add New Application")}</h2>
                     <button 
                       onClick={() => {
                         setShowAddForm(false);
                         setEditingId(null);
+                        setViewingId(null);
                         setNewApplication({
                           companyId: "",
                           newCompany: "",
@@ -1036,7 +1103,7 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <form onSubmit={handleSubmit} className="space-y-4">
+                  <form onSubmit={viewingId ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
                       <div>
@@ -1052,12 +1119,13 @@ export default function App() {
                           }}
                           onFocus={() => setCompanyDropdownOpen(true)}
                           placeholder="Type to search or add a company"
+                          readOnly={Boolean(viewingId)}
                           className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
                       </div>
 
-                      {companyDropdownOpen && (
+                      {companyDropdownOpen && !viewingId && (
                         <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
                           <button
                             type="button"
@@ -1107,6 +1175,7 @@ export default function App() {
                           placeholder="Enter company name *"
                           value={newApplication.newCompany}
                           onChange={handleInputChange}
+                          readOnly={Boolean(viewingId)}
                           className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
@@ -1122,6 +1191,7 @@ export default function App() {
                         placeholder="e.g., Frontend Engineer *"
                         value={newApplication.role}
                         onChange={handleInputChange}
+                        readOnly={Boolean(viewingId)}
                         className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -1136,6 +1206,7 @@ export default function App() {
                         max={todayISO}
                         value={newApplication.dateApplied}
                         onChange={handleInputChange}
+                        disabled={Boolean(viewingId)}
                         className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -1148,6 +1219,7 @@ export default function App() {
                         name="status"
                         value={newApplication.status}
                         onChange={handleInputChange}
+                        disabled={Boolean(viewingId)}
                         className="w-full border rounded-md px-3 py-2"
                         required
                       >
@@ -1164,9 +1236,25 @@ export default function App() {
                         placeholder="e.g., applied via LinkedIn"
                         value={newApplication.notes}
                         onChange={handleInputChange}
+                        readOnly={Boolean(viewingId)}
                         className="w-full border rounded-md px-3 py-2 h-24"
                       />
                     </div>
+                    
+                    {(editingId || viewingId) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Status History</label>
+                        <textarea
+                          name="statusNotes"
+                          value={newApplication.statusNotes || ''}
+                          readOnly
+                          rows={6}
+                          wrap="soft"
+                          style={{ whiteSpace: 'pre-wrap' }}
+                          className="w-full border rounded-md px-3 py-2 h-40 bg-gray-50 text-sm text-gray-700 resize-none overflow-y-auto"
+                        />
+                      </div>
+                    )}
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Files</label>
@@ -1177,110 +1265,145 @@ export default function App() {
                               <FileText className="h-4 w-4 mr-2 text-gray-500" />
                               <span className="text-sm">{file.name}</span>
                             </div>
-                            <button 
-                              type="button"
-                              onClick={() => removeFile(file.name)}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                            {!viewingId && (
+                              <button 
+                                type="button"
+                                onClick={() => removeFile(file.name)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
-                            <input
-                              type="file"
-                              ref={fileInputRef}
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'resume')}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Resume</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  ref={fileInputRef}
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'resume')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Resume</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'coverLetter')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Cover Letter</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'coverLetter')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Cover Letter</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'jobDescription')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Job Description</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'jobDescription')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Job Description</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                           <div>
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => handleFileUpload(e, 'applicationDoc')}
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                const el = (e.currentTarget.previousSibling as HTMLInputElement)
-                                el?.click()
-                              }}
-                              className="w-full flex items-center justify-center space-x-1 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md text-sm"
-                            >
-                              <Upload className="h-4 w-4" />
-                              <span>Upload Application Doc</span>
-                            </button>
+                            {!viewingId && (
+                              <>
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'applicationDoc')}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    const el = (e.currentTarget.previousSibling as HTMLInputElement)
+                                    el?.click()
+                                  }}
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  <span className="truncate">Upload Application Doc</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex justify-end space-x-2 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddForm(false);
-                          setEditingId(null);
-                          setCompanyQuery('');
-                          setCompanyDropdownOpen(false);
-                        }}
-                        className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                      >
-                        {editingId ? "Update" : "Save"}
-                      </button>
+                    <div className="sticky bottom-0 bg-white border-t py-3 flex justify-end space-x-2">
+                      {viewingId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddForm(false);
+                            setViewingId(null);
+                            setCompanyQuery('');
+                            setCompanyDropdownOpen(false);
+                          }}
+                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                        >
+                          Close
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddForm(false);
+                              setEditingId(null);
+                              setCompanyQuery('');
+                              setCompanyDropdownOpen(false);
+                            }}
+                            className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                          >
+                            {editingId ? "Update" : "Save"}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </form>
                 </div>

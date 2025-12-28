@@ -12,7 +12,7 @@ module.exports = async function (req, res) {
   }
 
   try {
-    const { jobId, filename, contentBase64, contentType, url, storageKey, size } = req.body;
+    const { jobId, filename, contentBase64, contentType, url, storageKey, size, uploadUrl } = req.body;
 
     // If client already uploaded the bytes to a signed URL and sends metadata (url/storageKey), insert directly
     if (url && storageKey) {
@@ -29,7 +29,8 @@ module.exports = async function (req, res) {
     const buffer = Buffer.from(_contentBase64, 'base64');
     let saved;
     try {
-      saved = await blob.save({ filename: _filename, buffer, contentType: _contentType });
+      // If client provided an uploadUrl (signed URL), pass it through so server can PUT bytes server-side.
+      saved = await blob.save({ filename: _filename, buffer, contentType: _contentType, uploadUrl });
     } catch (err) {
       console.error('blob.save failed:', err && err.message);
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });

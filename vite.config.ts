@@ -78,7 +78,9 @@
       open: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:3001',
+          // Use a non-default dev API port to avoid colliding with Vite when
+          // the dev environment already has other services on common ports.
+          target: 'http://localhost:3002',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api/, '/api')

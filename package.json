@@ -6,11 +6,11 @@
     "migrate": "node scripts/migrate.js",
     "dev": "vite",
     "dev:api": "node dev-server.js",
+    "dev:all": "concurrently \"npm:dev:api\" \"npm:dev\"",
     "build": "vite build",
     "serve": "vite preview"
   },
   "dependencies": {
-    "pg": "^8.11.0",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-aspect-ratio": "^1.1.2",
@@ -45,6 +45,7 @@
     "lucide-react": "^0.487.0",
     "motion": "*",
     "next-themes": "^0.4.6",
+    "pg": "^8.11.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -58,6 +59,7 @@
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@vitejs/plugin-react-swc": "^3.10.2",
+    "concurrently": "^8.2.2",
     "vite": "6.3.5"
   }
 }
