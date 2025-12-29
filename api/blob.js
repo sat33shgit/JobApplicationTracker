@@ -317,3 +317,13 @@ module.exports.delete = async function deleteBlob({ key, url }) {
 
   return false;
 };
+
+// Expose helper to fetch an object from R2 (returns AWS SDK GetObject response)
+module.exports.getObject = async function getObject(key) {
+  const client = getR2Client();
+  if (!client || !GetObjectCommand) throw new Error('R2 client not configured or SDK missing');
+  const bucket = process.env.R2_BUCKET;
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const res = await client.send(cmd);
+  return res;
+};

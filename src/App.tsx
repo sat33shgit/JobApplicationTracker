@@ -1029,7 +1029,11 @@ export default function App() {
                                       {app.files.map((file, index) => (
                                         <a
                                           key={index}
-                                          href={file.url || file.publicUrl || '#'}
+                                          href={
+                                            file.url || file.publicUrl || file.url === null
+                                              ? (file.url || `/api/blob-proxy?key=${encodeURIComponent(file.storage_key || file.storageKey || file.key || file.name)}`)
+                                              : '#'
+                                          }
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center hover:underline"
