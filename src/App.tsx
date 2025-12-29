@@ -407,6 +407,7 @@ export default function App() {
           });
           if (!metaResp.ok) {
             const txt = await metaResp.text().catch(() => '<no body>');
+            // Surface server-side upload failure instead of falling back to a browser PUT
             throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
           }
           const savedMeta = await metaResp.json();
@@ -414,8 +415,9 @@ export default function App() {
           return savedMeta;
         }
       } catch (e) {
-        // If URL parsing fails or server-side upload fails, fall back to browser PUT below
-        console.warn('server-side upload attempt failed, will try browser PUT', e);
+        // Do not fall back to cross-origin browser PUT when server-side upload fails —
+        // that will trigger CORS errors. Instead, surface the server error.
+        throw e;
       }
 
       // 2) PUT the file bytes directly to the signed URL (browser)
