@@ -17,7 +17,16 @@ module.exports = async function (req, res) {
     // If client already uploaded the bytes to a signed URL and sends metadata (url/storageKey), insert directly
     const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
     if (url && storageKey) {
-      const urlToSave = hasR2 ? null : url;
+      // Prefer any URL returned by the client/provider. If none, and R2 is configured
+      // try to construct a public URL from R2 endpoint or public prefix.
+      let urlToSave = url || null;
+      if (!urlToSave && hasR2) {
+        const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
+        if (publicPrefix) {
+          const prefix = publicPrefix.replace(/\/+$/, '');
+          urlToSave = `${prefix}/${process.env.R2_BUCKET}/${encodeURIComponent(storageKey || filename)}`;
+        }
+      }
       const result = await db.query(
         `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
         [jobId || null, filename, storageKey, urlToSave, size || null, contentType || null]
@@ -58,7 +67,19 @@ module.exports = async function (req, res) {
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });
     }
 
-    const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
+    // Prefer saved.url if available. If R2 is configured but saved.url is null,
+    // attempt to construct a public URL using R2 endpoint or public prefix.
+    let urlToSave = saved.url || null;
+    if (!urlToSave) {
+      const hasR2cfg = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
+      if (hasR2cfg) {
+        const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
+        if (publicPrefix) {
+          const prefix = publicPrefix.replace(/\/+$/, '');
+          urlToSave = `${prefix}/${process.env.R2_BUCKET}/${encodeURIComponent(saved.key || storageFilename)}`;
+        }
+      }
+    }
     try {
       const upd = await db.query(
         `UPDATE attachments SET storage_key=$1, url=$2, size=$3, content_type=$4 WHERE id=$5 RETURNING *`,
