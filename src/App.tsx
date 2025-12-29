@@ -355,6 +355,17 @@ export default function App() {
 
     // helper: create signed URL (server will call Vercel) and PUT file bytes, then persist metadata
     const uploadFileToServer = async (jobId, fileObj) => {
+      // Safe ArrayBuffer -> base64 conversion (avoid spread operator which can exceed call stack)
+      function arrayBufferToBase64(buffer: ArrayBuffer) {
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 0x8000; // 32KB chunks
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, Array.prototype.slice.call(chunk));
+        }
+        return btoa(binary);
+      }
       // 1) request signed upload URL from server
       const createResp = await fetch('/api/uploads/create', {
         method: 'POST',
@@ -374,7 +385,7 @@ export default function App() {
         // Fallback: server returned a URL but no signed upload URL (e.g., provider not configured).
         // Use server-side upload endpoint which accepts base64 payload (`/api/uploads` expects contentBase64).
         const buf = await fileObj.file.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const b64 = arrayBufferToBase64(buf);
         const metaResp = await fetch('/api/uploads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -399,7 +410,7 @@ export default function App() {
         if (uploadOrigin && uploadOrigin !== window.location.origin) {
           // server-side upload
           const buf = await fileObj.file.arrayBuffer();
-          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+          const b64 = arrayBufferToBase64(buf);
           const metaResp = await fetch('/api/uploads', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
