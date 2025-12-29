@@ -29,21 +29,46 @@ module.exports = async function (req, res) {
     const { jobId: _jobId, filename: _filename, contentBase64: _contentBase64, contentType: _contentType } = req.body;
     if (!_filename || !_contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
     const buffer = Buffer.from(_contentBase64, 'base64');
+
+    // Create a DB record first so we can use its id as part of the storage key/path in R2.
+    let inserted;
+    try {
+      const insertRes = await db.query(
+        `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [jobId || null, _filename, null, null, null, _contentType || null]
+      );
+      inserted = insertRes.rows[0];
+    } catch (err) {
+      console.error('failed to insert attachments row before upload', err && err.message);
+      return res.status(500).json({ error: 'db insert failed' });
+    }
+
+    // Construct a storage filename/key that includes the attachment id so files are grouped by record.
+    const storageFilename = `${inserted.id}/${_filename}`;
+
     let saved;
     try {
       // If client provided an uploadUrl (signed URL), pass it through so server can PUT bytes server-side.
-      saved = await blob.save({ filename: _filename, buffer, contentType: _contentType, uploadUrl });
+      // Prefer using the storageFilename as the key when saving to R2/local providers.
+      saved = await blob.save({ filename: storageFilename, buffer, contentType: _contentType, uploadUrl });
     } catch (err) {
       console.error('blob.save failed:', err && err.message);
+      // Attempt to clean up the DB row we created to avoid orphaned records
+      try { await db.query('DELETE FROM attachments WHERE id=$1', [inserted.id]); } catch (e) { console.warn('failed to delete attachment row after save error', e && e.message); }
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });
     }
 
     const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
-    const result = await db.query(
-      `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [jobId || null, _filename, saved.key, urlToSave, saved.size, _contentType || null]
-    );
-    res.status(201).json(result.rows[0]);
+    try {
+      const upd = await db.query(
+        `UPDATE attachments SET storage_key=$1, url=$2, size=$3, content_type=$4 WHERE id=$5 RETURNING *`,
+        [saved.key || storageFilename, urlToSave, saved.size || buffer.length, _contentType || null, inserted.id]
+      );
+      res.status(201).json(upd.rows[0]);
+    } catch (err) {
+      console.error('failed to update attachment row after upload', err && err.message);
+      return res.status(500).json({ error: 'db update failed' });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'upload failed' });
