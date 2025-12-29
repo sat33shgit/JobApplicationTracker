@@ -81,16 +81,18 @@ module.exports = async function (req, res) {
 
     // Prefer saved.url if available. If R2 is configured but saved.url is null,
     // attempt to construct a public URL using R2 endpoint or public prefix.
-    let urlToSave = saved.url || null;
-    if (!urlToSave) {
-      const hasR2cfg = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
-      if (hasR2cfg) {
-        const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
-        if (publicPrefix) {
-          urlToSave = buildR2Url(publicPrefix, process.env.R2_BUCKET, saved.key || storageFilename);
-        }
+    // Prefer a constructed R2 URL based on the saved.key when R2 is configured —
+    // `saved.url` may contain encoded slashes (%2F) which can cause gateway issues.
+    let urlToSave = null;
+    const hasR2cfg = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
+    if (hasR2cfg) {
+      const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
+      if (publicPrefix) {
+        urlToSave = buildR2Url(publicPrefix, process.env.R2_BUCKET, saved.key || storageFilename);
       }
     }
+    // Fallback to any provider-returned URL if we couldn't construct one
+    if (!urlToSave) urlToSave = saved.url || null;
     try {
       const upd = await db.query(
         `UPDATE attachments SET storage_key=$1, url=$2, size=$3, content_type=$4 WHERE id=$5 RETURNING *`,
