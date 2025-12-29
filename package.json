@@ -54,7 +54,9 @@
     "recharts": "^2.15.2",
     "sonner": "^2.0.3",
     "tailwind-merge": "*",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "@aws-sdk/client-s3": "^3.484.0",
+    "@aws-sdk/s3-request-presigner": "^3.484.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

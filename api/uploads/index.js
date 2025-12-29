@@ -15,10 +15,12 @@ module.exports = async function (req, res) {
     const { jobId, filename, contentBase64, contentType, url, storageKey, size, uploadUrl } = req.body;
 
     // If client already uploaded the bytes to a signed URL and sends metadata (url/storageKey), insert directly
+    const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
     if (url && storageKey) {
+      const urlToSave = hasR2 ? null : url;
       const result = await db.query(
         `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [jobId || null, filename, storageKey, url, size || null, contentType || null]
+        [jobId || null, filename, storageKey, urlToSave, size || null, contentType || null]
       );
       return res.status(201).json(result.rows[0]);
     }
@@ -36,9 +38,10 @@ module.exports = async function (req, res) {
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });
     }
 
+    const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
     const result = await db.query(
       `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [jobId || null, _filename, saved.key, saved.url, saved.size, _contentType || null]
+      [jobId || null, _filename, saved.key, urlToSave, saved.size, _contentType || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

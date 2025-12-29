@@ -23,6 +23,25 @@ module.exports = async function (req, res) {
       return stream.pipe(res);
     }
 
+    // If we have a storage key (R2), try to produce a signed URL and redirect to it
+    if (att.storage_key) {
+      try {
+        const blob = require('../blob');
+        if (typeof blob.createSignedUrl === 'function') {
+          const signed = await blob.createSignedUrl(att.storage_key, { contentType: att.content_type });
+          if (signed && signed.uploadURL) {
+            // For S3 presigned PUT style we returned uploadURL; for GET signed URL some providers return URL directly.
+            // If createSignedUrl returned `uploadURL` for PUT, still prefer to return a presigned GET URL if available.
+            // Here, if `signed.url` is present, use it; otherwise use `signed.uploadURL` as a best-effort.
+            const redirectTo = signed.url || signed.uploadURL;
+            if (redirectTo) return res.writeHead(302, { Location: redirectTo }).end();
+          }
+        }
+      } catch (e) {
+        console.warn('createSignedUrl failed', e && e.message);
+      }
+    }
+
     // Otherwise redirect to stored URL (e.g., blob public URL)
     if (att.url) return res.writeHead(302, { Location: att.url }).end();
 
