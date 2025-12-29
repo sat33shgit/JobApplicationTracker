@@ -1027,16 +1027,17 @@ export default function App() {
                                   <td className="px-6 py-3">
                                     <div className="flex space-x-1">
                                       {app.files.map((file, index) => (
-                                        <span 
+                                        <a
                                           key={index}
-                                          className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center"
+                                          href={file.url || file.publicUrl || '#'}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center hover:underline"
                                           title={file.name}
                                         >
                                           <FileText className="h-3 w-3 mr-1" />
-                                          {file.type === 'resume' ? 'CV' : 
-                                           file.type === 'coverLetter' ? 'CL' : 
-                                           file.type === 'jobDescription' ? 'JD' : file.type === 'applicationDoc' ? 'App' : 'Doc'}
-                                        </span>
+                                          <span className="truncate max-w-[12rem]">{file.name}</span>
+                                        </a>
                                       ))}
                                     </div>
                                   </td>
