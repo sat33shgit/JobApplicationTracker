@@ -12,6 +12,19 @@ module.exports = async function (req, res) {
   }
 
   try {
+    // Helper: construct a public URL from a prefix, bucket and object key.
+    function buildR2Url(prefix, bucket, key) {
+      if (!prefix) return null;
+      const trimmed = prefix.replace(/\/+$/, '');
+      // If prefix already includes the bucket, don't add it again.
+      const hasBucket = bucket && trimmed.indexOf('/' + bucket) !== -1;
+      const parts = [trimmed];
+      if (bucket && !hasBucket) parts.push(bucket);
+      // Split key into segments and encode each segment (preserve path separators)
+      const segments = (key || '').split('/').map(s => encodeURIComponent(s));
+      return parts.concat(segments).join('/');
+    }
+
     const { jobId, filename, contentBase64, contentType, url, storageKey, size, uploadUrl } = req.body;
 
     // If client already uploaded the bytes to a signed URL and sends metadata (url/storageKey), insert directly
@@ -23,8 +36,7 @@ module.exports = async function (req, res) {
       if (!urlToSave && hasR2) {
         const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
         if (publicPrefix) {
-          const prefix = publicPrefix.replace(/\/+$/, '');
-          urlToSave = `${prefix}/${process.env.R2_BUCKET}/${encodeURIComponent(storageKey || filename)}`;
+          urlToSave = buildR2Url(publicPrefix, process.env.R2_BUCKET, storageKey || filename);
         }
       }
       const result = await db.query(
@@ -75,8 +87,7 @@ module.exports = async function (req, res) {
       if (hasR2cfg) {
         const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || process.env.R2_ENDPOINT;
         if (publicPrefix) {
-          const prefix = publicPrefix.replace(/\/+$/, '');
-          urlToSave = `${prefix}/${process.env.R2_BUCKET}/${encodeURIComponent(saved.key || storageFilename)}`;
+          urlToSave = buildR2Url(publicPrefix, process.env.R2_BUCKET, saved.key || storageFilename);
         }
       }
     }
