@@ -17,9 +17,20 @@ module.exports = async function (req, res) {
 
     try {
       // blob.createSignedUrl expects (filename, opts)
-      const createRes = await blob.createSignedUrl(filename, { contentType });
-      // createRes is expected to contain fields like { uploadURL, uploadUrl, url, key }
-      return res.status(200).json(createRes || {});
+      const createRes = (await blob.createSignedUrl(filename, { contentType })) || {};
+
+      // If Cloudflare R2 is configured on the server, do not return the signed
+      // upload URL to the browser (it will often fail due to CORS). Instead,
+      // force server-side upload by omitting uploadURL fields. The server-side
+      // upload path (`/api/uploads` POST with `contentBase64`) will then be used.
+      const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
+      if (hasR2) {
+        delete createRes.uploadURL;
+        delete createRes.uploadUrl;
+        delete createRes.signedUrl;
+      }
+
+      return res.status(200).json(createRes);
     } catch (err) {
       console.error('create upload url failed', err && err.message);
       if (err && err.stack) console.error(err.stack);
