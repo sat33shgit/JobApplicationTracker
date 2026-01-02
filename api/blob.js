@@ -194,6 +194,17 @@ async function createSignedUrlR2(filename, opts = {}) {
   return { uploadURL: signed, url, key: filename };
 }
 
+// Create signed GET URL for reading/downloading files from R2
+async function createSignedGetUrlR2(key, opts = {}) {
+  const client = getR2Client();
+  if (!client || !getSignedUrl || !GetObjectCommand) return null;
+  const bucket = process.env.R2_BUCKET;
+  const expires = opts.expires || 3600; // 1 hour default for read URLs
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const signed = await getSignedUrl(client, cmd, { expiresIn: expires });
+  return { url: signed, key };
+}
+
 // Create signed upload URL without uploading bytes. Returns the create response
 async function createSignedUrl(filename, opts = {}) {
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
@@ -268,6 +279,24 @@ module.exports = {
 
 // Also export createSignedUrl
 module.exports.createSignedUrl = createSignedUrl;
+
+// Export createSignedGetUrl for generating signed GET URLs (for reading/downloading files)
+module.exports.createSignedGetUrl = async function createSignedGetUrl(key, opts = {}) {
+  // Try R2 signed GET URL first
+  try {
+    const r2Signed = await createSignedGetUrlR2(key, opts);
+    if (r2Signed) return r2Signed;
+  } catch (e) {
+    console.warn('createSignedGetUrlR2 failed', e && e.message);
+  }
+  // Fallback: return null or public URL if configured
+  const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX;
+  if (publicPrefix) {
+    return { url: `${publicPrefix}/${encodeURIComponent(key)}`, key };
+  }
+  return null;
+};
+
 // Delete a blob by key or URL. Best-effort: attempt provider delete if token exists, otherwise delete local file if present.
 module.exports.delete = async function deleteBlob({ key, url }) {
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;

@@ -64,8 +64,10 @@ module.exports = async function (req, res) {
       return res.status(500).json({ error: 'db insert failed' });
     }
 
-    // Construct a storage filename/key that includes the attachment id so files are grouped by record.
-    const storageFilename = `${inserted.id}/${_filename}`;
+    // Construct a storage filename/key that includes the job id so all files for one application are grouped together.
+    // Use jobId as the folder name, or fall back to attachment id if jobId is not provided.
+    const folderName = jobId || inserted.id;
+    const storageFilename = `${folderName}/${_filename}`;
 
     let saved;
     try {

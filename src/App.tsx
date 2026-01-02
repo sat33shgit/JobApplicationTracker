@@ -1,5 +1,4 @@
-import React from 'react';
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import SimpleModal from './components/SimpleModal';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import logger from './utils/logger';
@@ -23,8 +22,8 @@ const formatDisplayDate = (isoDate: string) => {
 };
 import { motion } from "motion/react";
 // Using a simple in-app modal for delete confirmation (avoids ref/portal issues)
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { Upload, Plus, Search, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 
 // Initial empty arrays — real data will be loaded from the API on mount
 const initialCompanies: Array<{ id: number; name: string }> = [];
@@ -195,25 +194,22 @@ export default function App() {
   const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
   const todayISO = getTodayISO();
 
-  // Update stats when applications change
-  useEffect(() => {
-    // stats computed via useMemo now; no-op
-  }, [applications]);
+  // Update stats when applications change - now computed via useMemo, no effect needed
 
   // Handle sorting
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
+  const handleSort = useCallback((key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  }, []);
 
-  // Sort applications
-  const sortedApplications = [...applications].sort((a, b) => {
+  // Sort applications - memoized for performance
+  const sortedApplications = useMemo(() => [...applications].sort((a, b) => {
     if (sortConfig.key === 'companyId') {
       const companyA = companies.find(c => c.id === a.companyId)?.name || '';
       const companyB = companies.find(c => c.id === b.companyId)?.name || '';
@@ -229,17 +225,17 @@ export default function App() {
       return sortConfig.direction === 'asc' ? 1 : -1;
     }
     return 0;
-  });
+  }), [applications, sortConfig, companies]);
 
-  // Filter applications based on search term
-  const filteredApplications = sortedApplications.filter(app => {
+  // Filter applications based on search term - memoized
+  const filteredApplications = useMemo(() => sortedApplications.filter(app => {
     const company = companies.find(c => c.id === app.companyId)?.name || '';
     const searchString = `${company} ${app.role} ${app.status} ${app.notes}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
-  });
+  }), [sortedApplications, companies, searchTerm]);
 
-  // Group applications by company
-  const groupedApplications = filteredApplications.reduce((acc, app) => {
+  // Group applications by company - memoized
+  const groupedApplications = useMemo(() => filteredApplications.reduce((acc, app) => {
     const companyId = app.companyId;
     const companyName = companies.find(c => c.id === companyId)?.name || 'Unknown';
     
@@ -253,47 +249,47 @@ export default function App() {
     
     acc[companyId].applications.push(app);
     return acc;
-  }, {});
+  }, {} as Record<number, any>), [filteredApplications, companies]);
 
-  // Sort grouped applications
-  const sortedGroupedApplications = Object.values(groupedApplications).sort((a: any, b: any) => {
+  // Sort grouped applications - memoized
+  const sortedGroupedApplications = useMemo(() => Object.values(groupedApplications).sort((a: any, b: any) => {
     if (sortConfig.key === 'companyId') {
       return sortConfig.direction === 'asc'
         ? a.companyName.localeCompare(b.companyName)
         : b.companyName.localeCompare(a.companyName);
     }
     return 0;
-  });
+  }), [groupedApplications, sortConfig]);
 
   // Toggle expand/collapse for a company
-  const toggleCompanyExpand = (companyId) => {
+  const toggleCompanyExpand = useCallback((companyId) => {
     setExpandedCompanies(prev => ({
       ...prev,
       [companyId]: !prev[companyId]
     }));
-  };
+  }, []);
 
   // Expand all companies
-  const expandAllCompanies = () => {
+  const expandAllCompanies = useCallback(() => {
     const expanded = {};
     sortedGroupedApplications.forEach((group: any) => {
       expanded[group.companyId] = true;
     });
     setExpandedCompanies(expanded);
-  };
+  }, [sortedGroupedApplications]);
 
   // Collapse all companies
-  const collapseAllCompanies = () => {
+  const collapseAllCompanies = useCallback(() => {
     setExpandedCompanies({});
-  };
+  }, []);
 
   // Handle form input changes
-  const handleInputChange = (e) => {
+  const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
     setNewApplication(prev => ({ ...prev, [name]: value }));
     // clear error when user types
     setErrors(prev => ({ ...prev, [name]: "" }));
-  };
+  }, []);
 
   // Handle file upload
   const handleFileUpload = (e, fileType) => {
@@ -328,6 +324,8 @@ export default function App() {
       setErrors(newErrors);
       return;
     }
+
+    setIsSaving(true);
 
     let companyId = parseInt(newApplication.companyId);
 
@@ -546,7 +544,9 @@ export default function App() {
       setCompanyQuery('');
       setCompanyDropdownOpen(false);
       setShowAddForm(false);
+      setIsSaving(false);
     } catch (err) {
+      setIsSaving(false);
       logger.error(err);
       alert('Failed to save application. See console for details.');
     }
@@ -657,13 +657,13 @@ export default function App() {
           <nav className="hidden md:flex space-x-4">
             <button 
               onClick={() => setActiveTab("dashboard")}
-              className={`px-3 py-2 rounded-md ${activeTab === "dashboard" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+              className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "dashboard" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
             >
               Dashboard
             </button>
             <button 
               onClick={() => setActiveTab("applications")}
-              className={`px-3 py-2 rounded-md ${activeTab === "applications" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+              className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "applications" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
             >
               Applications
             </button>
@@ -700,13 +700,13 @@ export default function App() {
         <div className="mt-6 flex justify-end items-center gap-3">
           <button
             onClick={confirmDelete}
-            className="px-4 py-2 rounded text-white"
+            className="px-4 py-2 rounded text-white cursor-pointer"
             style={{ backgroundColor: '#dc2626', marginRight: '12px' }}
             aria-label="Confirm delete"
           >
             Delete
           </button>
-          <button className="px-4 py-2 rounded border bg-white" onClick={cancelDelete}>Cancel</button>
+          <button className="px-4 py-2 rounded border bg-white cursor-pointer" onClick={cancelDelete}>Cancel</button>
         </div>
       </SimpleModal>
 
@@ -727,19 +727,19 @@ export default function App() {
                   <div className="flex space-x-2">
                     <button 
                       onClick={() => setSelectedTimeframe("daily")}
-                      className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "daily" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "daily" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
                     >
                       Daily
                     </button>
                     <button 
                       onClick={() => setSelectedTimeframe("weekly")}
-                      className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "weekly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "weekly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
                     >
                       Weekly
                     </button>
                     <button 
                       onClick={() => setSelectedTimeframe("monthly")}
-                      className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
                     >
                       Monthly
                     </button>
@@ -794,20 +794,34 @@ export default function App() {
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={stats.status}
+                            data={stats.status.filter(s => s.value > 0)}
                             cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            outerRadius={80}
+                            cy="45%"
+                            outerRadius={70}
                             fill="#8884d8"
                             dataKey="value"
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            label={({ value }) => {
+                              const total = stats.status.reduce((sum, s) => sum + s.value, 0);
+                              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+                              return pct > 0 ? `${pct}%` : '';
+                            }}
+                            labelLine={false}
                           >
-                            {stats.status.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            {stats.status.filter(s => s.value > 0).map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[statusOptions.indexOf(entry.name) % COLORS.length]} />
                             ))}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip formatter={(value, name) => {
+                            const total = stats.status.reduce((sum, s) => sum + s.value, 0);
+                            const pct = total > 0 ? ((value as number / total) * 100).toFixed(1) : '0';
+                            return [`${value} applications (${pct}%)`, name];
+                          }} />
+                          <Legend 
+                            layout="horizontal" 
+                            verticalAlign="bottom" 
+                            align="center"
+                            wrapperStyle={{ paddingTop: '20px' }}
+                          />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -820,7 +834,7 @@ export default function App() {
                   <h2 className="text-xl font-semibold">Recent Applications</h2>
                   <button 
                     onClick={() => setActiveTab("applications")}
-                    className="text-blue-600 hover:text-blue-800"
+                    className="text-blue-600 hover:text-blue-800 cursor-pointer"
                   >
                     View All
                   </button>
@@ -885,14 +899,14 @@ export default function App() {
                     </div>
                     <button 
                       onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
-                      className="flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                      className="flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer"
                     >
                       <Plus className="h-5 w-5" />
                       <span>Add Application</span>
                     </button>
                     <button 
                       onClick={handleExport}
-                      className="flex items-center justify-center space-x-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                      className="flex items-center justify-center space-x-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 cursor-pointer"
                     >
                       <FileSpreadsheet className="h-5 w-5" />
                       <span>Export</span>
@@ -904,14 +918,14 @@ export default function App() {
                   <div className="flex space-x-2">
                     <button 
                       onClick={expandAllCompanies}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
                     >
                       Expand All
                     </button>
                     <span className="text-gray-300">|</span>
                     <button 
                       onClick={collapseAllCompanies}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
                     >
                       Collapse All
                     </button>
@@ -935,7 +949,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[120px]"
                           onClick={() => handleSort('role')}
                         >
                           <div className="flex items-center space-x-1">
@@ -946,7 +960,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[120px]"
                           onClick={() => handleSort('dateApplied')}
                         >
                           <div className="flex items-center space-x-1">
@@ -993,10 +1007,12 @@ export default function App() {
                                   <ChevronRight className="h-4 w-4 text-gray-500" />
                                 )}
                               </td>
-                              <td className="px-6 py-3 font-medium">
-                                {group.companyName}
-                                <span className="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
-                                  {group.applications.length} role{group.applications.length !== 1 ? 's' : ''}
+                              <td className="px-6 py-3 font-medium whitespace-nowrap">
+                                <span className="inline-flex items-center">
+                                  {group.companyName}
+                                  <span className="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                    {group.applications.length} role{group.applications.length !== 1 ? 's' : ''}
+                                  </span>
                                 </span>
                               </td>
                               <td colSpan={5} className="px-6 py-3 text-sm text-gray-500 text-right">
@@ -1012,8 +1028,8 @@ export default function App() {
                                   <td className="px-6 py-3 pl-10">
                                     <span className="text-gray-400">{group.companyName}</span>
                                   </td>
-                                  <td className="px-6 py-3">{app.role}</td>
-                                  <td className="px-6 py-3">{formatDisplayDate(app.dateApplied)}</td>
+                                  <td className="px-6 py-3 whitespace-nowrap">{app.role}</td>
+                                  <td className="px-6 py-3 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
                                   <td className="px-6 py-3">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                       ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
@@ -1025,22 +1041,24 @@ export default function App() {
                                     </span>
                                   </td>
                                   <td className="px-6 py-3">
-                                    <div className="flex space-x-1">
+                                    <div className="grid grid-cols-2 gap-1 max-w-[280px]">
                                       {app.files.map((file, index) => (
                                         <a
                                           key={index}
                                           href={
-                                            file.url || file.publicUrl || file.url === null
-                                              ? (file.url || `/api/blob-proxy?key=${encodeURIComponent(file.storage_key || file.storageKey || file.key || file.name)}`)
-                                              : '#'
+                                            file.id 
+                                              ? `/api/uploads/${file.id}`
+                                              : file.url?.startsWith('/uploads/') 
+                                                ? file.url 
+                                                : `/api/blob-proxy?key=${encodeURIComponent(file.storage_key || file.storageKey || file.key || file.name)}`
                                           }
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center hover:underline"
                                           title={file.name}
                                         >
-                                          <FileText className="h-3 w-3 mr-1" />
-                                          <span className="truncate max-w-[12rem]">{file.name}</span>
+                                          <FileText className="h-3 w-3 mr-1 flex-shrink-0" />
+                                          <span className="truncate">{file.name}</span>
                                         </a>
                                       ))}
                                     </div>
@@ -1049,7 +1067,7 @@ export default function App() {
                                     <div className="flex space-x-2">
                                       <button
                                         onClick={(e) => { e.stopPropagation(); handleView(app.id); }}
-                                        className="text-gray-600 hover:text-gray-900"
+                                        className="text-gray-600 hover:text-gray-900 cursor-pointer"
                                         title="View"
                                       >
                                         <Eye className="h-5 w-5" />
@@ -1059,7 +1077,7 @@ export default function App() {
                                           e.stopPropagation();
                                           handleEdit(app.id);
                                         }}
-                                        className="text-blue-600 hover:text-blue-900"
+                                        className="text-blue-600 hover:text-blue-900 cursor-pointer"
                                       >
                                         <Edit className="h-5 w-5" />
                                       </button>
@@ -1068,7 +1086,7 @@ export default function App() {
                                           e.stopPropagation();
                                           handleDelete(app.id);
                                         }}
-                                        className="text-red-600 hover:text-red-900"
+                                        className="text-red-600 hover:text-red-900 cursor-pointer"
                                       >
                                         <Trash2 className="h-5 w-5" />
                                       </button>
@@ -1308,7 +1326,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => fileInputRef.current?.click()}
-                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm cursor-pointer"
                                 >
                                   <Upload className="h-4 w-4" />
                                   <span className="truncate">Upload Resume</span>
@@ -1330,7 +1348,7 @@ export default function App() {
                                     const el = (e.currentTarget.previousSibling as HTMLInputElement)
                                     el?.click()
                                   }}
-                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm cursor-pointer"
                                 >
                                   <Upload className="h-4 w-4" />
                                   <span className="truncate">Upload Cover Letter</span>
@@ -1352,7 +1370,7 @@ export default function App() {
                                     const el = (e.currentTarget.previousSibling as HTMLInputElement)
                                     el?.click()
                                   }}
-                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm cursor-pointer"
                                 >
                                   <Upload className="h-4 w-4" />
                                   <span className="truncate">Upload Job Description</span>
@@ -1374,7 +1392,7 @@ export default function App() {
                                     const el = (e.currentTarget.previousSibling as HTMLInputElement)
                                     el?.click()
                                   }}
-                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm"
+                                  className="min-w-[180px] h-10 flex items-center justify-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 rounded-md text-sm cursor-pointer"
                                 >
                                   <Upload className="h-4 w-4" />
                                   <span className="truncate">Upload Application Doc</span>
@@ -1396,7 +1414,7 @@ export default function App() {
                             setCompanyQuery('');
                             setCompanyDropdownOpen(false);
                           }}
-                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                         >
                           Close
                         </button>
@@ -1410,15 +1428,22 @@ export default function App() {
                               setCompanyQuery('');
                               setCompanyDropdownOpen(false);
                             }}
-                            className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
+                            className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                           >
                             Cancel
                           </button>
                           <button
                             type="submit"
-                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            disabled={isSaving}
+                            className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
                           >
-                            {editingId ? "Update" : "Save"}
+                            {isSaving && (
+                              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            )}
+                            <span>{isSaving ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update" : "Save")}</span>
                           </button>
                         </>
                       )}
