@@ -53,6 +53,7 @@
     build: {
       target: 'esnext',
       outDir: 'dist',
+      chunkSizeWarningLimit: 800,
       // Manual chunking to reduce the main bundle size and split heavy deps.
       rollupOptions: {
         output: {
@@ -62,11 +63,6 @@
                 if (id.includes('recharts')) return 'vendor_recharts';
                 if (id.includes('lucide-react')) return 'vendor_icons';
                 if (id.includes('@radix-ui')) return 'vendor_radix';
-                // Do not force React into a single manual chunk here. Let
-                // the bundler decide chunk placement for React and related
-                // packages to avoid initialization/order problems on some
-                // hosts (e.g., Vercel) where chunk loading order might vary.
-                // Heavy libraries are still separated above (recharts, lucide).
                 return 'vendor';
               }
           },

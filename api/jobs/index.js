@@ -41,9 +41,10 @@ async function uploadAttachment(req, res) {
     const buffer = Buffer.from(contentBase64, 'base64');
     const blob = require('../blob');
     const saved = await blob.save({ filename, buffer, contentType });
+    const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
     const result = await db.query(
       `INSERT INTO attachments(job_id, filename, storage_key, url, size, content_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [jobId || null, filename, saved.key, saved.url, saved.size, contentType || null]
+      [jobId || null, filename, saved.key, urlToSave, saved.size, contentType || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

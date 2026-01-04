@@ -1,5 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+let S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, getSignedUrl;
+try {
+  // AWS SDK v3 (used for Cloudflare R2 S3-compatible API)
+  ({ S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3'));
+  ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+} catch (e) {
+  // dependencies may not be installed in some envs; feature will be unavailable until installed
+}
 
 // Blob helper supporting two modes:
 // - Local filesystem (default): writes to `public/uploads/` and returns a public URL path.
@@ -30,6 +38,42 @@ async function saveLocal(filename, buffer) {
     key: `uploads/${filename}`,
     size: buffer.length,
   };
+}
+
+function getR2Client() {
+  if (!S3Client) return null;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const bucket = process.env.R2_BUCKET;
+  if (!accessKeyId || !secretAccessKey || !bucket) return null;
+  const endpoint = process.env.R2_ENDPOINT || (process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined);
+  const region = process.env.R2_REGION || 'auto';
+  const client = new S3Client({
+    region,
+    endpoint,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: false,
+  });
+  return client;
+}
+
+async function saveR2(filename, buffer, opts = {}) {
+  const client = getR2Client();
+  if (!client) throw new Error('R2 client not configured (missing R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET)');
+  const bucket = process.env.R2_BUCKET;
+  const contentType = opts.contentType || 'application/octet-stream';
+  const cmd = new PutObjectCommand({ Bucket: bucket, Key: filename, Body: buffer, ContentType: contentType });
+  await client.send(cmd);
+  const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX || opts.publicPrefix;
+  if (publicPrefix) {
+    const prefix = publicPrefix.replace(/\/+$/, '');
+    const encoded = encodeURIComponent(filename);
+    return { url: `${prefix}/${encoded}`, key: filename, size: buffer.length };
+  }
+  // If no public prefix, return an R2-style key and endpoint info
+  const endpoint = process.env.R2_ENDPOINT || (process.env.R2_ACCOUNT_ID ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : null);
+  const url = endpoint ? `${endpoint}/${bucket}/${encodeURIComponent(filename)}` : null;
+  return { url, key: filename, size: buffer.length };
 }
 
 async function saveRemote(filename, buffer, opts = {}) {
@@ -137,12 +181,44 @@ async function saveRemote(filename, buffer, opts = {}) {
   };
 }
 
+// Create signed upload URL using Cloudflare R2 (S3-compatible) if configured
+async function createSignedUrlR2(filename, opts = {}) {
+  const client = getR2Client();
+  if (!client || !getSignedUrl) return null;
+  const bucket = process.env.R2_BUCKET;
+  const expires = opts.expires || 900; // 15 minutes
+  const cmd = new PutObjectCommand({ Bucket: bucket, Key: filename, ContentType: opts.contentType || 'application/octet-stream' });
+  const signed = await getSignedUrl(client, cmd, { expiresIn: expires });
+  const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX;
+  const url = publicPrefix ? `${publicPrefix}/${encodeURIComponent(filename)}` : (process.env.R2_ENDPOINT ? `${process.env.R2_ENDPOINT}/${bucket}/${encodeURIComponent(filename)}` : null);
+  return { uploadURL: signed, url, key: filename };
+}
+
+// Create signed GET URL for reading/downloading files from R2
+async function createSignedGetUrlR2(key, opts = {}) {
+  const client = getR2Client();
+  if (!client || !getSignedUrl || !GetObjectCommand) return null;
+  const bucket = process.env.R2_BUCKET;
+  const expires = opts.expires || 3600; // 1 hour default for read URLs
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const signed = await getSignedUrl(client, cmd, { expiresIn: expires });
+  return { url: signed, key };
+}
+
 // Create signed upload URL without uploading bytes. Returns the create response
 async function createSignedUrl(filename, opts = {}) {
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
   // See note above: default to not enforcing remote uploads so environments without
   // blob tokens gracefully fall back to local storage or public prefix handling.
   const enforce = (process.env.ENFORCE_REMOTE_UPLOADS || 'false') === 'true';
+  // If R2 is configured and SDK available, prefer R2 signed URL flows
+  try {
+    const r2Signed = await createSignedUrlR2(filename, opts);
+    if (r2Signed) return r2Signed;
+  } catch (e) {
+    // ignore and fall back to Vercel flow
+  }
+
   if (!rwToken) {
     const msg = 'No read/write token available to create signed upload URL';
     if (enforce) throw new Error(msg);
@@ -184,10 +260,16 @@ async function createSignedUrl(filename, opts = {}) {
 module.exports = {
   async save({ filename, buffer, contentType, uploadUrl, publicPrefix }) {
     let provider = process.env.BLOB_PROVIDER || 'local';
-    // If a read/write token exists, prefer remote provider even if BLOB_PROVIDER wasn't explicitly set.
+    // Auto-detect R2 if credentials present
+    const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
+    if (hasR2) provider = 'r2';
+    // If a read/write token exists, prefer remote provider (vercel) unless R2 selected
     const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
     if (rwToken && provider === 'local') provider = 'vercel';
 
+    if (provider === 'r2') {
+      return saveR2(filename, buffer, { contentType, uploadUrl, publicPrefix });
+    }
     if (provider === 'vercel' || provider === 'remote') {
       return saveRemote(filename, buffer, { contentType, uploadUrl, publicPrefix });
     }
@@ -197,10 +279,45 @@ module.exports = {
 
 // Also export createSignedUrl
 module.exports.createSignedUrl = createSignedUrl;
+
+// Export createSignedGetUrl for generating signed GET URLs (for reading/downloading files)
+module.exports.createSignedGetUrl = async function createSignedGetUrl(key, opts = {}) {
+  // Try R2 signed GET URL first
+  try {
+    const r2Signed = await createSignedGetUrlR2(key, opts);
+    if (r2Signed) return r2Signed;
+  } catch (e) {
+    console.warn('createSignedGetUrlR2 failed', e && e.message);
+  }
+  // Fallback: return null or public URL if configured
+  const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX;
+  if (publicPrefix) {
+    return { url: `${publicPrefix}/${encodeURIComponent(key)}`, key };
+  }
+  return null;
+};
+
 // Delete a blob by key or URL. Best-effort: attempt provider delete if token exists, otherwise delete local file if present.
 module.exports.delete = async function deleteBlob({ key, url }) {
   const rwToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
   // Try provider delete if key and token available
+  // Try R2 delete if configured
+  const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
+  if (hasR2 && key) {
+    const client = getR2Client();
+    if (client && DeleteObjectCommand) {
+      try {
+        const bucket = process.env.R2_BUCKET;
+        const cmd = new DeleteObjectCommand({ Bucket: bucket, Key: key });
+        await client.send(cmd);
+        return true;
+      } catch (e) {
+        console.warn('R2 delete failed', e && e.message);
+      }
+    }
+  }
+
+  // Try provider delete if key and token available (Vercel)
   if (rwToken && key) {
     // Try a Vercel delete endpoint (best-effort). The API may differ by account; handle non-OK responses silently.
     try {
@@ -228,4 +345,14 @@ module.exports.delete = async function deleteBlob({ key, url }) {
   }
 
   return false;
+};
+
+// Expose helper to fetch an object from R2 (returns AWS SDK GetObject response)
+module.exports.getObject = async function getObject(key) {
+  const client = getR2Client();
+  if (!client || !GetObjectCommand) throw new Error('R2 client not configured or SDK missing');
+  const bucket = process.env.R2_BUCKET;
+  const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const res = await client.send(cmd);
+  return res;
 };

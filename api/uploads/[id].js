@@ -23,6 +23,22 @@ module.exports = async function (req, res) {
       return stream.pipe(res);
     }
 
+    // If we have a storage key (R2), try to produce a signed GET URL and redirect to it
+    if (att.storage_key) {
+      try {
+        const blob = require('../blob');
+        // Use createSignedGetUrl for reading files (not createSignedUrl which is for uploads)
+        if (typeof blob.createSignedGetUrl === 'function') {
+          const signed = await blob.createSignedGetUrl(att.storage_key, { contentType: att.content_type });
+          if (signed && signed.url) {
+            return res.writeHead(302, { Location: signed.url }).end();
+          }
+        }
+      } catch (e) {
+        console.warn('createSignedGetUrl failed', e && e.message);
+      }
+    }
+
     // Otherwise redirect to stored URL (e.g., blob public URL)
     if (att.url) return res.writeHead(302, { Location: att.url }).end();
 

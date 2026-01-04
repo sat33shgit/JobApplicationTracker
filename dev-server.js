@@ -151,9 +151,12 @@ async function routeApi(req, res) {
         if (!fs.existsSync(handlerPath)) return false;
         if (require.cache[handlerPath]) delete require.cache[handlerPath];
         const dbPath = path.join(API_ROOT, 'db.js');
+        const blobPath = path.join(API_ROOT, 'blob.js');
         if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
+        if (fs.existsSync(blobPath) && require.cache[blobPath]) delete require.cache[blobPath];
         delete require.cache[require.resolve(handlerPath)];
         if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
+        if (fs.existsSync(blobPath)) try { delete require.cache[require.resolve(blobPath)]; } catch (e) {}
         const handler = require(handlerPath);
         await handler(adapterReq, adapterRes);
         return true;
@@ -168,9 +171,12 @@ async function routeApi(req, res) {
 
         if (require.cache[handlerPath]) delete require.cache[handlerPath];
         const dbPath = path.join(API_ROOT, 'db.js');
+        const blobPath = path.join(API_ROOT, 'blob.js');
         if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
+        if (fs.existsSync(blobPath) && require.cache[blobPath]) delete require.cache[blobPath];
         delete require.cache[require.resolve(handlerPath)];
         if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
+        if (fs.existsSync(blobPath)) try { delete require.cache[require.resolve(blobPath)]; } catch (e) {}
         adapterReq.url = pathname;
         const handler = require(handlerPath);
         await handler(adapterReq, adapterRes);
