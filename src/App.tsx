@@ -2,10 +2,13 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import SimpleModal from './components/SimpleModal';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import logger from './utils/logger';
+import { motion } from "motion/react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
+import * as XLSX from 'xlsx';
+
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
-// Parse YYYY-MM-DD strings as local dates (new Date('YYYY-MM-DD') is treated as UTC,
-// which can shift the day depending on timezone). This ensures list view matches
-// the date input and DB values.
+// Parse YYYY-MM-DD strings as local dates to ensure list view matches the date input and DB values
 const formatDisplayDate = (isoDate: string) => {
   let date: Date;
   // If value is 'YYYY-MM-DD', construct local date
@@ -20,10 +23,6 @@ const formatDisplayDate = (isoDate: string) => {
   const year = date.getFullYear();
   return `${day}-${month}-${year}`;
 };
-import { motion } from "motion/react";
-// Using a simple in-app modal for delete confirmation (avoids ref/portal issues)
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { Upload, Plus, Search, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 
 // Initial empty arrays — real data will be loaded from the API on mount
 const initialCompanies: Array<{ id: number; name: string }> = [];
@@ -35,78 +34,137 @@ const statusOptions = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"]
 // Colors for charts
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
-// Function to generate mock statistics
-const generateStats = (applications) => {
-  // Get current date
-  const now = new Date();
+// Function to generate statistics based on date range and timeframe
+const generateStats = (applications, startDate?: string, endDate?: string, timeframe: string = 'daily') => {
+  // Filter applications by date range if provided
+  const filteredApps = (startDate && endDate) 
+    ? applications.filter(app => {
+        const appDate = app.dateApplied;
+        return appDate >= startDate && appDate <= endDate;
+      })
+    : applications;
+
+  const start = startDate ? new Date(startDate + 'T00:00:00') : new Date();
+  const end = endDate ? new Date(endDate + 'T23:59:59') : new Date();
   
-  // Daily stats (last 7 days)
+  // Daily stats - each day in the range
   const dailyStats = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    const dateString = date.toISOString().split('T')[0];
-    
-    const count = applications.filter(app => app.dateApplied === dateString).length;
-    dailyStats.push({
-      date: formatDisplayDate(date.toISOString()),
-      count
-    });
+  if (startDate && endDate) {
+    const currentDate = new Date(start);
+    while (currentDate <= end) {
+      const dateString = currentDate.toISOString().split('T')[0];
+      const count = filteredApps.filter(app => app.dateApplied === dateString).length;
+      dailyStats.push({
+        date: formatDisplayDate(currentDate.toISOString()),
+        count
+      });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  } else {
+    // Default: last 7 days
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
+      const count = applications.filter(app => app.dateApplied === dateString).length;
+      dailyStats.push({
+        date: formatDisplayDate(date.toISOString()),
+        count
+      });
+    }
   }
   
-  // Weekly stats (last 4 weeks)
-  const weeklyStats = [];
-  for (let i = 3; i >= 0; i--) {
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - (i * 7 + 6));
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() - i * 7);
-    
-    const count = applications.filter(app => {
-      const appDate = new Date(app.dateApplied);
-      return appDate >= startDate && appDate <= endDate;
-    }).length;
-    
-    weeklyStats.push({
-      week: `Week ${4-i}`,
-      count
-    });
-  }
-  
-  // Monthly stats (last 6 months)
+  // Monthly stats - group by month in the range
   const monthlyStats = [];
-  for (let i = 5; i >= 0; i--) {
-    const date = new Date(now);
-    date.setMonth(date.getMonth() - i);
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    
-    const startDate = new Date(year, date.getMonth(), 1);
-    const endDate = new Date(year, date.getMonth() + 1, 0);
-    
-    const count = applications.filter(app => {
-      const appDate = new Date(app.dateApplied);
-      return appDate >= startDate && appDate <= endDate;
-    }).length;
-    
-    monthlyStats.push({
-      month,
-      count
-    });
+  if (startDate && endDate) {
+    const currentMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (currentMonth <= end) {
+      const monthStart = new Date(currentMonth);
+      const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+      
+      const count = filteredApps.filter(app => {
+        const appDate = new Date(app.dateApplied);
+        return appDate >= monthStart && appDate <= monthEnd;
+      }).length;
+      
+      monthlyStats.push({
+        month: currentMonth.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        count
+      });
+      
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+  } else {
+    // Default: last 6 months
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date(now);
+      date.setMonth(date.getMonth() - i);
+      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      
+      const count = applications.filter(app => {
+        const appDate = new Date(app.dateApplied);
+        return appDate >= monthStart && appDate <= monthEnd;
+      }).length;
+      
+      monthlyStats.push({
+        month: date.toLocaleDateString('en-US', { month: 'short' }),
+        count
+      });
+    }
   }
   
-  // Status distribution
+  // Yearly stats - group by year in the range
+  const yearlyStats = [];
+  if (startDate && endDate) {
+    for (let year = start.getFullYear(); year <= end.getFullYear(); year++) {
+      const yearStart = new Date(year, 0, 1);
+      const yearEnd = new Date(year, 11, 31);
+      
+      const count = filteredApps.filter(app => {
+        const appDate = new Date(app.dateApplied);
+        return appDate >= yearStart && appDate <= yearEnd;
+      }).length;
+      
+      yearlyStats.push({
+        year: year.toString(),
+        count
+      });
+    }
+  } else {
+    // Default: last 5 years
+    const now = new Date();
+    for (let i = 4; i >= 0; i--) {
+      const year = now.getFullYear() - i;
+      const yearStart = new Date(year, 0, 1);
+      const yearEnd = new Date(year, 11, 31);
+      
+      const count = applications.filter(app => {
+        const appDate = new Date(app.dateApplied);
+        return appDate >= yearStart && appDate <= yearEnd;
+      }).length;
+      
+      yearlyStats.push({
+        year: year.toString(),
+        count
+      });
+    }
+  }
+  
+  // Status distribution - based on filtered applications
   const statusStats = statusOptions.map(status => ({
     name: status,
-    value: applications.filter(app => app.status === status).length
+    value: filteredApps.filter(app => app.status === status).length
   }));
   
   return {
     daily: dailyStats,
-    weekly: weeklyStats,
     monthly: monthlyStats,
+    yearly: yearlyStats,
     status: statusStats,
-    total: applications.length
+    total: filteredApps.length
   };
 };
 
@@ -116,11 +174,167 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
-  const stats = React.useMemo(() => generateStats(applications), [applications]);
+  const [selectedTimeframe, setSelectedTimeframe] = useState("daily");
+  
+  // Date range filter state
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [dateRangeError, setDateRangeError] = useState("");
+  
+  // Get max allowed range based on timeframe
+  const getMaxRangeDays = (timeframe: string) => {
+    switch (timeframe) {
+      case 'daily': return 30;
+      case 'monthly': return 365; // 12 months
+      case 'yearly': return 3650; // 10 years
+      default: return 30;
+    }
+  };
+  
+  // Validate and adjust date range when timeframe changes
+  const validateDateRange = (start: string, end: string, timeframe: string): { valid: boolean; error: string } => {
+    if (!start || !end) return { valid: true, error: '' };
+    
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const maxDays = getMaxRangeDays(timeframe);
+    
+    if (startDate > endDate) {
+      return { valid: false, error: 'Start date must be before end date' };
+    }
+    
+    if (diffDays > maxDays) {
+      const limits = {
+        daily: '30 days',
+        monthly: '12 months',
+        yearly: '10 years'
+      };
+      return { valid: false, error: `Max range for ${timeframe} view is ${limits[timeframe]}` };
+    }
+    
+    return { valid: true, error: '' };
+  };
+  
+  // Handle timeframe change
+  const handleTimeframeChange = (newTimeframe: string) => {
+    setSelectedTimeframe(newTimeframe);
+    const validation = validateDateRange(filterStartDate, filterEndDate, newTimeframe);
+    setDateRangeError(validation.error);
+  };
+  
+  // Handle date change
+  const handleDateRangeChange = (type: 'start' | 'end', value: string) => {
+    const newStart = type === 'start' ? value : filterStartDate;
+    const newEnd = type === 'end' ? value : filterEndDate;
+    
+    if (type === 'start') setFilterStartDate(value);
+    else setFilterEndDate(value);
+    
+    const validation = validateDateRange(newStart, newEnd, selectedTimeframe);
+    setDateRangeError(validation.error);
+  };
+  
+  // Handle year change for yearly timeframe
+  const handleYearChange = (type: 'start' | 'end', year: string) => {
+    const value = type === 'start' ? `${year}-01-01` : `${year}-12-31`;
+    handleDateRangeChange(type, value);
+  };
+  
+  // Get year from date string
+  const getYearFromDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    return dateStr.split('-')[0];
+  };
+  
+  // Generate year options (last 20 years to current year)
+  const yearOptionsDesc = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years: number[] = [];
+    for (let y = currentYear; y >= currentYear - 20; y--) {
+      years.push(y);
+    }
+    return years;
+  }, []);
+  
+  // Ascending order for start year
+  const yearOptionsAsc = useMemo(() => [...yearOptionsDesc].reverse(), [yearOptionsDesc]);
+  
+  // Generate month-year options (last 24 months)
+  const monthYearOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 24; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      options.push({ value, label });
+    }
+    return options;
+  }, []);
+  
+  // Ascending order for start month
+  const monthYearOptionsAsc = useMemo(() => [...monthYearOptions].reverse(), [monthYearOptions]);
+  
+  // Handle month-year change for monthly timeframe
+  const handleMonthYearChange = (type: 'start' | 'end', value: string) => {
+    if (!value) {
+      handleDateRangeChange(type, '');
+      return;
+    }
+    const [year, month] = value.split('-').map(Number);
+    if (type === 'start') {
+      handleDateRangeChange(type, `${year}-${String(month).padStart(2, '0')}-01`);
+    } else {
+      // Get last day of month
+      const lastDay = new Date(year, month, 0).getDate();
+      handleDateRangeChange(type, `${year}-${String(month).padStart(2, '0')}-${lastDay}`);
+    }
+  };
+  
+  // Get month-year from date string (YYYY-MM)
+  const getMonthYearFromDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length >= 2) {
+      return `${parts[0]}-${parts[1]}`;
+    }
+    return '';
+  };
+  
+  // Clear date range filter
+  const clearDateRange = () => {
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setDateRangeError('');
+  };
+  
+  // Compute stats with date range filter
+  const stats = useMemo(() => {
+    const hasDateSelection = filterStartDate || filterEndDate;
+    const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
+    
+    // If user has selected dates but there's an error, return empty stats
+    if (hasDateSelection && dateRangeError) {
+      return {
+        daily: [],
+        monthly: [],
+        yearly: [],
+        status: statusOptions.map(status => ({ name: status, value: 0 })),
+        total: 0
+      };
+    }
+    
+    return generateStats(
+      applications, 
+      hasValidRange ? filterStartDate : undefined, 
+      hasValidRange ? filterEndDate : undefined,
+      selectedTimeframe
+    );
+  }, [applications, filterStartDate, filterEndDate, dateRangeError, selectedTimeframe]);
+  
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-
-  // SimpleModal moved to `src/components/SimpleModal.tsx`
 
   // Load jobs from the API on first render and map them into the app's shape
   useEffect(() => {
@@ -187,18 +401,23 @@ export default function App() {
     notes: "",
     files: []
   });
-  const [sortConfig, setSortConfig] = useState({ key: 'dateApplied', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState({ key: 'companyId', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTimeframe, setSelectedTimeframe] = useState("daily");
   const [editingId, setEditingId] = useState(null);
   const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const todayISO = getTodayISO();
-
-  // Update stats when applications change - now computed via useMemo, no effect needed
+  
+  // Map of companyId -> companyName for fast lookup (avoid repeated .find calls)
+  const companyMap = useMemo(() => {
+    const m = new Map<number, string>();
+    companies.forEach(c => m.set(c.id, c.name));
+    return m;
+  }, [companies]);
 
   // Handle sorting
   const handleSort = useCallback((key) => {
@@ -211,9 +430,9 @@ export default function App() {
   // Sort applications - memoized for performance
   const sortedApplications = useMemo(() => [...applications].sort((a, b) => {
     if (sortConfig.key === 'companyId') {
-      const companyA = companies.find(c => c.id === a.companyId)?.name || '';
-      const companyB = companies.find(c => c.id === b.companyId)?.name || '';
-      return sortConfig.direction === 'asc' 
+      const companyA = companyMap.get(a.companyId) || '';
+      const companyB = companyMap.get(b.companyId) || '';
+      return sortConfig.direction === 'asc'
         ? companyA.localeCompare(companyB)
         : companyB.localeCompare(companyA);
     }
@@ -227,9 +446,10 @@ export default function App() {
     return 0;
   }), [applications, sortConfig, companies]);
 
-  // Filter applications based on search term - memoized
+
+  // Filter applications based on search term - respects `sortedApplications` ordering
   const filteredApplications = useMemo(() => sortedApplications.filter(app => {
-    const company = companies.find(c => c.id === app.companyId)?.name || '';
+    const company = companyMap.get(app.companyId) || '';
     const searchString = `${company} ${app.role} ${app.status} ${app.notes}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
   }), [sortedApplications, companies, searchTerm]);
@@ -237,7 +457,7 @@ export default function App() {
   // Group applications by company - memoized
   const groupedApplications = useMemo(() => filteredApplications.reduce((acc, app) => {
     const companyId = app.companyId;
-    const companyName = companies.find(c => c.id === companyId)?.name || 'Unknown';
+    const companyName = companyMap.get(companyId) || 'Unknown';
     
     if (!acc[companyId]) {
       acc[companyId] = {
@@ -342,7 +562,7 @@ export default function App() {
     // Build payload for API (don't include File objects; attachments upload happens after job is created/updated)
     const payload = {
       title: newApplication.role,
-      company: companies.find(c => c.id === companyId)?.name || (newApplication.newCompany || null),
+      company: companyMap.get(companyId) || (newApplication.newCompany || null),
       status: newApplication.status,
       applied_date: newApplication.dateApplied,
       metadata: {
@@ -628,17 +848,58 @@ export default function App() {
     setConfirmOpen(false);
   };
 
-  // Handle export to Excel
-  const handleExport = () => {
-    // In a real app, you would generate an Excel file
-    // For this mock, we'll just show an alert
-    alert("In a real application, this would download an Excel file with all your job application data.");
-  };
+  // Get company name by ID - memoized for use in export
+  const getCompanyName = useCallback((id) => {
+    return companyMap.get(id) || 'Unknown';
+  }, [companyMap]);
 
-  // Get company name by ID
-  const getCompanyName = (id) => {
-    return companies.find(c => c.id === id)?.name || 'Unknown';
-  };
+  // Handle export to Excel
+  const handleExport = useCallback(() => {
+    // Prepare data for export - use filtered/searched applications
+    const exportData = filteredApplications.map(app => {
+      const companyName = getCompanyName(app.companyId);
+      
+      return {
+        'Company': companyName,
+        'Role': app.role,
+        'Date Applied': formatDisplayDate(app.dateApplied),
+        'Status': app.status,
+        'Notes': app.notes || '',
+        'Status History': app.statusNotes || ''
+      };
+    });
+    
+    if (exportData.length === 0) {
+      alert('No applications to export.');
+      return;
+    }
+    
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    
+    // Set column widths for better readability
+    const colWidths = [
+      { wch: 25 },  // Company
+      { wch: 30 },  // Role
+      { wch: 15 },  // Date Applied
+      { wch: 12 },  // Status
+      { wch: 50 },  // Notes
+      { wch: 50 }   // Status Notes
+    ];
+    ws['!cols'] = colWidths;
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Job Applications');
+    
+    // Generate filename with current date
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const filename = `job_applications_${dateStr}.xlsx`;
+    
+    // Download the file
+    XLSX.writeFile(wb, filename);
+  }, [filteredApplications, getCompanyName]);
 
   // Remove file from application
   const removeFile = (fileName) => {
@@ -722,42 +983,154 @@ export default function App() {
               className="space-y-6"
             >
               <div className="bg-white rounded-lg shadow-md p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold">Application Statistics</h2>
-                  <div className="flex space-x-2">
-                    <button 
-                      onClick={() => setSelectedTimeframe("daily")}
-                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "daily" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-                    >
-                      Daily
-                    </button>
-                    <button 
-                      onClick={() => setSelectedTimeframe("weekly")}
-                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "weekly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-                    >
-                      Weekly
-                    </button>
-                    <button 
-                      onClick={() => setSelectedTimeframe("monthly")}
-                      className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-                    >
-                      Monthly
-                    </button>
+                <div className="flex flex-col space-y-4 mb-6">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-semibold">Application Statistics</h2>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleTimeframeChange("daily")}
+                        className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "daily" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      >
+                        Daily
+                      </button>
+                      <button 
+                        onClick={() => handleTimeframeChange("monthly")}
+                        className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      >
+                        Monthly
+                      </button>
+                      <button 
+                        onClick={() => handleTimeframeChange("yearly")}
+                        className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "yearly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                      >
+                        Yearly
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Date Range Filter */}
+                  <div className="flex flex-wrap items-center gap-6 px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700">Date Range:</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {selectedTimeframe === 'yearly' ? (
+                        // Year dropdowns for yearly view
+                        <>
+                          <select
+                            value={getYearFromDate(filterStartDate)}
+                            onChange={(e) => handleYearChange('start', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
+                          >
+                            <option value="">From Year</option>
+                            {yearOptionsAsc.map(year => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
+                          <span className="text-gray-500 font-medium px-1">to</span>
+                          <select
+                            value={getYearFromDate(filterEndDate)}
+                            onChange={(e) => handleYearChange('end', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
+                          >
+                            <option value="">To Year</option>
+                            {yearOptionsDesc.map(year => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : selectedTimeframe === 'monthly' ? (
+                        // Month-Year dropdowns for monthly view
+                        <>
+                          <select
+                            value={getMonthYearFromDate(filterStartDate)}
+                            onChange={(e) => handleMonthYearChange('start', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
+                          >
+                            <option value="">From Month</option>
+                            {monthYearOptionsAsc.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <span className="text-gray-500 font-medium px-1">to</span>
+                          <select
+                            value={getMonthYearFromDate(filterEndDate)}
+                            onChange={(e) => handleMonthYearChange('end', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
+                          >
+                            <option value="">To Month</option>
+                            {monthYearOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : (
+                        // Date inputs for daily view
+                        <>
+                          <input
+                            type="date"
+                            value={filterStartDate}
+                            onChange={(e) => handleDateRangeChange('start', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <span className="text-gray-500 font-medium px-1">to</span>
+                          <input
+                            type="date"
+                            value={filterEndDate}
+                            onChange={(e) => handleDateRangeChange('end', e.target.value)}
+                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </>
+                      )}
+                    </div>
+                    {(filterStartDate || filterEndDate) && (
+                      <button
+                        onClick={clearDateRange}
+                        className="px-4 py-2 text-sm text-white bg-gray-500 hover:bg-gray-600 rounded-md cursor-pointer transition-colors"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 ml-auto">
+                      <span className="text-sm text-gray-600 bg-gray-200 px-3 py-1.5 rounded-md font-medium">
+                        Max: {selectedTimeframe === 'daily' ? '30 days' : selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
+                      </span>
+                    </div>
+                    {dateRangeError && (
+                      <span className="w-full text-sm text-red-600 font-medium bg-red-50 px-3 py-1.5 rounded-md">{dateRangeError}</span>
+                    )}
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                   <div className="bg-blue-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">Total Applications</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      {filterStartDate && filterEndDate && !dateRangeError ? 'Applications in Range' : 'Total Applications'}
+                    </h3>
                     <p className="text-3xl font-bold">{stats.total}</p>
                   </div>
-                  <div className="bg-green-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">Applications This Week</h3>
-                    <p className="text-3xl font-bold">{stats.weekly[3].count}</p>
-                  </div>
                   <div className="bg-purple-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">Applications This Month</h3>
-                    <p className="text-3xl font-bold">{stats.monthly[5].count}</p>
+                    <h3 className="text-lg font-medium mb-2">
+                      {filterStartDate && filterEndDate && !dateRangeError ? 'Monthly Breakdown' : 'Applications This Month'}
+                    </h3>
+                    <p className="text-3xl font-bold">
+                      {stats.monthly.length > 0 ? stats.monthly.reduce((sum, m) => sum + m.count, 0) : 0}
+                    </p>
+                    {filterStartDate && filterEndDate && !dateRangeError && (
+                      <p className="text-xs text-gray-500 mt-1">{stats.monthly.length} month(s)</p>
+                    )}
+                  </div>
+                  <div className="bg-orange-50 rounded-lg p-4">
+                    <h3 className="text-lg font-medium mb-2">
+                      {filterStartDate && filterEndDate && !dateRangeError ? 'Yearly Breakdown' : 'Applications This Year'}
+                    </h3>
+                    <p className="text-3xl font-bold">
+                      {stats.yearly.length > 0 ? stats.yearly.reduce((sum, y) => sum + y.count, 0) : 0}
+                    </p>
+                    {filterStartDate && filterEndDate && !dateRangeError && (
+                      <p className="text-xs text-gray-500 mt-1">{stats.yearly.length} year(s)</p>
+                    )}
                   </div>
                 </div>
                 
@@ -768,18 +1141,19 @@ export default function App() {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={selectedTimeframe === "daily" ? stats.daily : 
-                                selectedTimeframe === "weekly" ? stats.weekly : stats.monthly}
+                                selectedTimeframe === "monthly" ? stats.monthly : stats.yearly}
                           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
                             dataKey={selectedTimeframe === "daily" ? "date" : 
-                                    selectedTimeframe === "weekly" ? "week" : "month"} 
+                                    selectedTimeframe === "monthly" ? "month" : "year"} 
                           />
                           <YAxis allowDecimals={false} />
                           <Tooltip />
                           <Bar dataKey="count">
-                            {(selectedTimeframe === "daily" ? stats.daily : selectedTimeframe === "weekly" ? stats.weekly : stats.monthly).map((entry, idx) => (
+                            {(selectedTimeframe === "daily" ? stats.daily : 
+                              selectedTimeframe === "monthly" ? stats.monthly : stats.yearly).map((entry, idx) => (
                               <Cell key={`bar-${idx}`} fill={COLORS[idx % COLORS.length]} />
                             ))}
                           </Bar>
@@ -1139,7 +1513,7 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <form onSubmit={viewingId ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
+                  <form ref={formRef} onSubmit={viewingId ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
                       <div>
@@ -1404,51 +1778,52 @@ export default function App() {
                       </div>
                     </div>
                     
-                    <div className="sticky bottom-0 bg-white border-t py-3 flex justify-end space-x-2">
-                      {viewingId ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAddForm(false);
-                            setViewingId(null);
-                            setCompanyQuery('');
-                            setCompanyDropdownOpen(false);
-                          }}
-                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                        >
-                          Close
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowAddForm(false);
-                              setEditingId(null);
-                              setCompanyQuery('');
-                              setCompanyDropdownOpen(false);
-                            }}
-                            className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isSaving}
-                            className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-                          >
-                            {isSaving && (
-                              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            )}
-                            <span>{isSaving ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update" : "Save")}</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
                   </form>
+                </div>
+                <div className="border-t p-4 bg-white flex justify-end gap-2">
+                  {viewingId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddForm(false);
+                        setViewingId(null);
+                        setCompanyQuery('');
+                        setCompanyDropdownOpen(false);
+                      }}
+                      className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAddForm(false);
+                          setEditingId(null);
+                          setCompanyQuery('');
+                          setCompanyDropdownOpen(false);
+                        }}
+                        className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => formRef.current?.requestSubmit?.() ?? formRef.current?.submit?.()}
+                        disabled={isSaving}
+                        className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                      >
+                        {isSaving && (
+                          <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        <span>{isSaving ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update" : "Save")}</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </motion.div>
             </div>
@@ -1465,6 +1840,3 @@ export default function App() {
     </div>
   );
 }
-// Figma integration removed — no-op. If you previously relied on
-// `figma:react` for plugin metadata, reintroduce it in a separate
-// plugin-specific build. The web app does not need Figma runtime calls.
