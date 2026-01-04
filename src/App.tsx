@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import SimpleModal from './components/SimpleModal';
+import { Toaster } from './components/ui/sonner';
+import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import logger from './utils/logger';
 import { motion } from "motion/react";
@@ -174,7 +176,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
-  const [selectedTimeframe, setSelectedTimeframe] = useState("daily");
+  const [selectedTimeframe, setSelectedTimeframe] = useState("yearly");
   
   // Date range filter state
   const [filterStartDate, setFilterStartDate] = useState("");
@@ -453,6 +455,24 @@ export default function App() {
     const searchString = `${company} ${app.role} ${app.status} ${app.notes}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
   }), [sortedApplications, companies, searchTerm]);
+
+  // Apply date range filters (if any) on top of search-filtered applications for summary counts
+  const filteredForCounts = useMemo(() => {
+    const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
+    if (!hasValidRange) return filteredApplications;
+    const s = new Date(filterStartDate + 'T00:00:00');
+    const e = new Date(filterEndDate + 'T23:59:59');
+    return filteredApplications.filter(app => {
+      const d = new Date(app.dateApplied + 'T00:00:00');
+      return d >= s && d <= e;
+    });
+  }, [filteredApplications, filterStartDate, filterEndDate, dateRangeError]);
+
+  const totalCompanies = useMemo(() => {
+    const set = new Set<number>();
+    filteredForCounts.forEach(a => set.add(a.companyId));
+    return set.size;
+  }, [filteredForCounts]);
 
   // Group applications by company - memoized
   const groupedApplications = useMemo(() => filteredApplications.reduce((acc, app) => {
@@ -768,7 +788,7 @@ export default function App() {
     } catch (err) {
       setIsSaving(false);
       logger.error(err);
-      alert('Failed to save application. See console for details.');
+      toast.error('Failed to save application. See console for details.');
     }
   };
 
@@ -839,7 +859,7 @@ export default function App() {
       setConfirmOpen(false);
     } catch (err) {
       logger.error('delete failed', err && err.message);
-      alert('Failed to delete application. See console for details.');
+      toast.error('Failed to delete application. See console for details.');
     }
   };
 
@@ -847,6 +867,24 @@ export default function App() {
     setDeleteTarget(null);
     setConfirmOpen(false);
   };
+
+  // Open Add Application dialog (reset form)
+  const openAddForm = useCallback(() => {
+    setEditingId(null);
+    setViewingId(null);
+    setNewApplication({
+      companyId: "",
+      newCompany: "",
+      role: "",
+      dateApplied: getTodayISO(),
+      status: "Applied",
+      notes: "",
+      files: []
+    });
+    setCompanyQuery('');
+    setCompanyDropdownOpen(false);
+    setShowAddForm(true);
+  }, []);
 
   // Get company name by ID - memoized for use in export
   const getCompanyName = useCallback((id) => {
@@ -870,7 +908,7 @@ export default function App() {
     });
     
     if (exportData.length === 0) {
-      alert('No applications to export.');
+      toast.error('No applications to export.');
       return;
     }
     
@@ -911,6 +949,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">
+      <Toaster />
       {/* Header */}
       <header className="bg-white shadow-md py-4 px-6">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
@@ -938,6 +977,15 @@ export default function App() {
               <option value="dashboard">Dashboard</option>
               <option value="applications">Applications</option>
             </select>
+          </div>
+          <div className="ml-4">
+            <button
+              onClick={openAddForm}
+              className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add application</span>
+            </button>
           </div>
         </div>
       </header>
@@ -1103,34 +1151,17 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="bg-blue-50 rounded-lg p-4">
+                <div className="flex flex-col md:flex-row gap-6 mb-6">
+                  <div className="bg-blue-50 rounded-lg p-4 w-full md:w-1/2">
                     <h3 className="text-lg font-medium mb-2">
                       {filterStartDate && filterEndDate && !dateRangeError ? 'Applications in Range' : 'Total Applications'}
                     </h3>
                     <p className="text-3xl font-bold">{stats.total}</p>
                   </div>
-                  <div className="bg-purple-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">
-                      {filterStartDate && filterEndDate && !dateRangeError ? 'Monthly Breakdown' : 'Applications This Month'}
-                    </h3>
-                    <p className="text-3xl font-bold">
-                      {stats.monthly.length > 0 ? stats.monthly.reduce((sum, m) => sum + m.count, 0) : 0}
-                    </p>
-                    {filterStartDate && filterEndDate && !dateRangeError && (
-                      <p className="text-xs text-gray-500 mt-1">{stats.monthly.length} month(s)</p>
-                    )}
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">
-                      {filterStartDate && filterEndDate && !dateRangeError ? 'Yearly Breakdown' : 'Applications This Year'}
-                    </h3>
-                    <p className="text-3xl font-bold">
-                      {stats.yearly.length > 0 ? stats.yearly.reduce((sum, y) => sum + y.count, 0) : 0}
-                    </p>
-                    {filterStartDate && filterEndDate && !dateRangeError && (
-                      <p className="text-xs text-gray-500 mt-1">{stats.yearly.length} year(s)</p>
-                    )}
+                  <div className="bg-purple-50 rounded-lg p-4 w-full md:w-1/2">
+                    <h3 className="text-lg font-medium mb-2">Total Companies</h3>
+                    <p className="text-3xl font-bold">{totalCompanies}</p>
+                    <p className="text-xs text-gray-500 mt-1">Unique companies in current filters</p>
                   </div>
                 </div>
                 
