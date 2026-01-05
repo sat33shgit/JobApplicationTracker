@@ -810,21 +810,44 @@ export default function App() {
         if (!resp.ok) throw new Error('Failed to update');
         const updated = await resp.json();
         // After updating job, upload any new files and attach them
-        const filesToUpload = newApplication.files.filter(f => f && f.file);
+        const filesToUpload = Array.isArray(newApplication.files) ? newApplication.files.filter(f => f && f.file) : [];
         let attachments = [];
+        console.debug('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
         if (filesToUpload.length) {
-          attachments = await Promise.all(filesToUpload.map(f => uploadFileToServer(updated.id, f)));
-          // Map attachments into metadata.files shape and merge with any existing files
-          const attachMeta = attachments.map(a => ({ name: a.filename || a.name, url: a.url || a.url, id: a.id }));
-          const existingFiles = (updated.metadata && Array.isArray(updated.metadata.files)) ? updated.metadata.files : [];
-          const mergedFiles = [...existingFiles, ...attachMeta];
-          // patch job metadata to include merged attachments
-          await fetch(`/api/jobs/${updated.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
-          });
-          updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
+          try {
+            attachments = await Promise.all(filesToUpload.map(async (f) => {
+              try {
+                const res = await uploadFileToServer(updated.id, f);
+                console.debug('uploadFileToServer result:', res);
+                return res;
+              } catch (uerr) {
+                console.error('uploadFileToServer failed for', f.name, uerr);
+                throw uerr;
+              }
+            }));
+          } catch (e) {
+            console.error('One or more file uploads failed during edit:', e);
+            toast.error('One or more attachments failed to upload. See console.');
+            // Continue — do not abort the whole submit; user can retry attachments
+          }
+
+          if (attachments && attachments.length) {
+            const attachMeta = attachments.map(a => ({ name: a.filename || a.name, url: a.url || a.url, id: a.id }));
+            const existingFiles = (updated.metadata && Array.isArray(updated.metadata.files)) ? updated.metadata.files : [];
+            const mergedFiles = [...existingFiles, ...attachMeta];
+            // patch job metadata to include merged attachments
+            try {
+              const metaResp = await fetch(`/api/jobs/${updated.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
+              });
+              if (!metaResp.ok) console.error('Failed to patch job metadata after uploads', metaResp.status);
+            } catch (pmErr) {
+              console.error('Failed to patch metadata after uploads', pmErr);
+            }
+            updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
+          }
         }
 
         setApplications(applications.map(app => app.id === editingId ? {
