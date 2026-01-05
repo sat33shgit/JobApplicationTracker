@@ -309,6 +309,36 @@ export default function App() {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
+    // remove start/end from URL if present
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('start');
+      params.delete('end');
+      // keep timeframe if present
+      const newQuery = params.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore in non-browser environments
+    }
+  };
+
+  // Open Applications tab and pass current filters via query params
+  const openApplicationsWithFilters = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (filterStartDate) params.set('start', filterStartDate);
+      else params.delete('start');
+      if (filterEndDate) params.set('end', filterEndDate);
+      else params.delete('end');
+      if (selectedTimeframe) params.set('timeframe', selectedTimeframe);
+      const q = params.toString();
+      const newUrl = q ? `${window.location.pathname}?${q}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore
+    }
+    setActiveTab('applications');
   };
   
   // Compute stats with date range filter
@@ -391,6 +421,24 @@ export default function App() {
     loadJobs();
     return () => { mounted = false; };
   }, []);
+
+  // Read filters from URL query params on load and apply them (navigate to applications)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const start = params.get('start');
+      const end = params.get('end');
+      const timeframe = params.get('timeframe');
+      if (start || end || timeframe) {
+        if (start) setFilterStartDate(start);
+        if (end) setFilterEndDate(end);
+        if (timeframe) setSelectedTimeframe(timeframe);
+        setActiveTab('applications');
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
@@ -405,6 +453,12 @@ export default function App() {
   });
   const [sortConfig, setSortConfig] = useState({ key: 'companyId', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
   const [editingId, setEditingId] = useState(null);
   const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -448,13 +502,40 @@ export default function App() {
     return 0;
   }), [applications, sortConfig, companies]);
 
+  // Recent applications - last 10 by dateApplied (descending)
+  const recentApplications = useMemo(() => {
+    return [...applications]
+      .filter(a => a.dateApplied)
+      .sort((a, b) => {
+        const da = new Date(a.dateApplied).getTime();
+        const db = new Date(b.dateApplied).getTime();
+        return db - da;
+      })
+      .slice(0, 10);
+  }, [applications]);
+
 
   // Filter applications based on search term - respects `sortedApplications` ordering
   const filteredApplications = useMemo(() => sortedApplications.filter(app => {
     const company = companyMap.get(app.companyId) || '';
     const searchString = `${company} ${app.role} ${app.status} ${app.notes}`.toLowerCase();
-    return searchString.includes(searchTerm.toLowerCase());
-  }), [sortedApplications, companies, searchTerm]);
+    if (!searchString.includes(debouncedSearchTerm.toLowerCase())) return false;
+    // If a valid date range is selected, apply date filtering here so the Applications
+    // page shows only rows within the selected range when navigated from Dashboard.
+    const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
+    if (!hasValidRange) return true;
+    const s = new Date(filterStartDate + 'T00:00:00');
+    const e = new Date(filterEndDate + 'T23:59:59');
+    const d = new Date(app.dateApplied + 'T00:00:00');
+    return d >= s && d <= e;
+  }), [sortedApplications, companies, debouncedSearchTerm, filterStartDate, filterEndDate, dateRangeError]);
+
+  const filteredApplicationsCount = useMemo(() => filteredApplications.length, [filteredApplications]);
+  const filteredCompaniesCount = useMemo(() => {
+    const s = new Set<number>();
+    filteredApplications.forEach(a => s.add(a.companyId));
+    return s.size;
+  }, [filteredApplications]);
 
   // Apply date range filters (if any) on top of search-filtered applications for summary counts
   const filteredForCounts = useMemo(() => {
@@ -500,6 +581,22 @@ export default function App() {
     }
     return 0;
   }), [groupedApplications, sortConfig]);
+
+  // Pagination for companies list (applications page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(sortedGroupedApplications.length / pageSize));
+
+  // Ensure current page stays within bounds when data changes
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+    if (currentPage < 1) setCurrentPage(1);
+  }, [currentPage, totalPages]);
+
+  const paginatedGroupedApplications = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedGroupedApplications.slice(start, start + pageSize);
+  }, [sortedGroupedApplications, currentPage]);
 
   // Toggle expand/collapse for a company
   const toggleCompanyExpand = useCallback((companyId) => {
@@ -939,6 +1036,131 @@ export default function App() {
     XLSX.writeFile(wb, filename);
   }, [filteredApplications, getCompanyName]);
 
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Clear selected file when modal is closed
+  useEffect(() => {
+    if (!showImportModal && importFileRef.current) {
+      try { importFileRef.current.value = ''; } catch(e) { /* ignore */ }
+    }
+  }, [showImportModal]);
+
+  const handleImportClick = () => {
+    setShowImportModal(true);
+  };
+
+  const supportedStatuses = new Set(statusOptions.map(s => s.toLowerCase()));
+
+  const handleImportFile = async (file: File | null) => {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xls') && !name.endsWith('.xlsx')) {
+      toast.error('Only .xls and .xlsx files are supported');
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows: Array<any> = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+
+      if (!rows.length) {
+        toast.error('No data found in the sheet');
+        setIsImporting(false);
+        return;
+      }
+
+      // Normalize headers (case-insensitive)
+      const firstRow = rows[0];
+      const headerMap: Record<string, string> = {};
+      Object.keys(firstRow).forEach(h => headerMap[h.trim().toLowerCase()] = h);
+
+      const reqCols = ['company name', 'role', 'date applied', 'status'];
+      const missing = reqCols.filter(c => !Object.prototype.hasOwnProperty.call(headerMap, c));
+      if (missing.length > 0) {
+        toast.error(`Missing columns: ${missing.join(', ')}`);
+        setIsImporting(false);
+        return;
+      }
+
+      let createdCount = 0;
+      let failedCount = 0;
+
+      for (const r of rows) {
+        const companyName = (r[headerMap['company name']] || '').toString().trim();
+        const role = (r[headerMap['role']] || '').toString().trim();
+        const dateVal = r[headerMap['date applied']];
+        const statusVal = (r[headerMap['status']] || '').toString().trim();
+
+        if (!companyName || !role) {
+          failedCount++;
+          continue;
+        }
+
+        // Normalize status
+        const statusNorm = statusVal && supportedStatuses.has(statusVal.toLowerCase())
+          ? statusOptions.find(s => s.toLowerCase() === statusVal.toLowerCase())
+          : 'Applied';
+
+        // Normalize date - try to parse; fallback to today
+        let applied_date = getTodayISO();
+        if (dateVal) {
+          try {
+            const parsed = new Date(dateVal);
+            if (!isNaN(parsed.getTime())) applied_date = normalizeDateToInput(parsed);
+            else applied_date = normalizeDateToInput(dateVal);
+          } catch (e) {
+            applied_date = getTodayISO();
+          }
+        }
+
+        const payload = {
+          title: role,
+          company: companyName,
+          status: statusNorm,
+          applied_date,
+          metadata: { notes: null, files: [] }
+        };
+
+        try {
+          const resp = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) throw new Error('Failed');
+          const created = await resp.json();
+          setApplications(prev => [...prev, {
+            id: created.id,
+            companyId: created.company_id || created.companyId || 0,
+            role: created.title,
+            dateApplied: normalizeDateToInput(created.applied_date),
+            status: created.status,
+            notes: created.metadata?.notes || '',
+            files: created.metadata?.files || [],
+            statusNotes: created.status_notes || ''
+          }]);
+          createdCount++;
+        } catch (e) {
+          failedCount++;
+        }
+      }
+
+      toast.success(`Import finished. Created: ${createdCount}, Failed: ${failedCount}`);
+      setShowImportModal(false);
+    } catch (err) {
+      logger.error('import failed', err);
+      toast.error('Import failed. See console for details.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Remove file from application
   const removeFile = (fileName) => {
     setNewApplication(prev => ({
@@ -951,7 +1173,7 @@ export default function App() {
     <div className="min-h-screen bg-white text-black flex flex-col">
       <Toaster />
       {/* Header */}
-      <header className="bg-white shadow-md py-4 px-6">
+      <header className="sticky top-0 bg-white shadow-md py-4 px-6 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold">Job Application Tracker</h1>
           <nav className="hidden md:flex space-x-4">
@@ -1019,6 +1241,36 @@ export default function App() {
         </div>
       </SimpleModal>
 
+      {/* Import modal */}
+      {showImportModal && (
+        <SimpleModal open={showImportModal} onClose={() => setShowImportModal(false)} titleId="import-title" descriptionId="import-desc">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 id="import-title" className="text-lg font-semibold">Import Applications</h3>
+              <p id="import-desc" className="text-sm text-gray-600">The xls file should have the column names 'company name', 'Role', 'Date Applied', 'status'.</p>
+            </div>
+            <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="mt-4">
+            <input
+              ref={(el) => (importFileRef.current = el)}
+              type="file"
+              accept=".xls,.xlsx"
+            />
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button onClick={() => setShowImportModal(false)} className="px-4 py-2 border rounded mr-2">Cancel</button>
+            <button
+              onClick={() => handleImportFile(importFileRef.current?.files ? importFileRef.current.files[0] : null)}
+              disabled={isImporting || !(importFileRef.current && importFileRef.current.files && importFileRef.current.files.length)}
+              className={`px-4 py-2 bg-gray-200 rounded ${isImporting ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              {isImporting ? 'Importing...' : 'Upload'}
+            </button>
+          </div>
+        </SimpleModal>
+      )}
+
       {/* Main content */}
       <main className="flex-grow p-6">
         <div className="max-w-7xl mx-auto">
@@ -1062,7 +1314,7 @@ export default function App() {
                       <Calendar className="h-5 w-5 text-gray-500" />
                       <span className="text-sm font-medium text-gray-700">Date Range:</span>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
                       {selectedTimeframe === 'yearly' ? (
                         // Year dropdowns for yearly view
                         <>
@@ -1072,9 +1324,9 @@ export default function App() {
                             className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
                           >
                             <option value="">From Year</option>
-                            {yearOptionsAsc.map(year => (
-                              <option key={year} value={year}>{year}</option>
-                            ))}
+                            {yearOptionsDesc.map(year => (
+                                <option key={year} value={year}>{year}</option>
+                              ))}
                           </select>
                           <span className="text-gray-500 font-medium px-1">to</span>
                           <select
@@ -1097,7 +1349,7 @@ export default function App() {
                             className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
                           >
                             <option value="">From Month</option>
-                            {monthYearOptionsAsc.map(opt => (
+                            {monthYearOptions.map(opt => (
                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
@@ -1132,16 +1384,17 @@ export default function App() {
                         </>
                       )}
                     </div>
-                    {(filterStartDate || filterEndDate) && (
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={clearDateRange}
-                        className="px-4 py-2 text-sm text-white bg-gray-500 hover:bg-gray-600 rounded-md cursor-pointer transition-colors"
+                        disabled={!(filterStartDate || filterEndDate)}
+                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                       >
                         Clear
                       </button>
-                    )}
+                    </div>
                     <div className="flex items-center gap-2 ml-auto">
-                      <span className="text-sm text-gray-600 bg-gray-200 px-3 py-1.5 rounded-md font-medium">
+                      <span className="text-sm text-gray-600 bg-gray-200 px-3 py-1.5 rounded-md font-medium whitespace-nowrap">
                         Max: {selectedTimeframe === 'daily' ? '30 days' : selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
                       </span>
                     </div>
@@ -1230,6 +1483,15 @@ export default function App() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
+                        <div className="mt-4 flex justify-center">
+                          <button
+                            onClick={openApplicationsWithFilters}
+                            disabled={!(filterStartDate || filterEndDate)}
+                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          >
+                            View Results
+                          </button>
+                        </div>
                   </div>
                 </div>
               </div>
@@ -1246,7 +1508,7 @@ export default function App() {
                 </div>
                 
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
+                  <table className="w-full table-fixed divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
@@ -1256,12 +1518,12 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {sortedApplications.slice(0, 5).map((app) => (
+                      {recentApplications.map((app) => (
                         <tr key={app.id}>
-                          <td className="px-6 py-4 whitespace-nowrap">{getCompanyName(app.companyId)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">{app.role}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4">{getCompanyName(app.companyId)}</td>
+                          <td className="px-6 py-4">{app.role}</td>
+                          <td className="px-6 py-4">{formatDisplayDate(app.dateApplied)}</td>
+                          <td className="px-6 py-4">
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                               ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
                                 app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
@@ -1289,6 +1551,21 @@ export default function App() {
               className="space-y-6"
             >
               <div className="bg-white rounded-lg shadow-md p-6">
+                  {(filterStartDate || filterEndDate) && !dateRangeError && (
+                    <div className="mb-4 p-3 rounded-md bg-blue-50 border border-blue-100 flex items-center justify-between">
+                      <div className="text-sm text-blue-700">
+                        Showing {filteredApplicationsCount} applications / {filteredCompaniesCount} companies for: {filterStartDate ? formatDisplayDate(filterStartDate) : 'Any'} to {filterEndDate ? formatDisplayDate(filterEndDate) : 'Any'}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={clearDateRange}
+                          className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50"
+                        >
+                          Clear filter
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
                   <h2 className="text-xl font-semibold">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
@@ -1310,6 +1587,13 @@ export default function App() {
                       <span>Add Application</span>
                     </button>
                     <button 
+                      onClick={handleImportClick}
+                      className="flex items-center justify-center space-x-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 cursor-pointer"
+                    >
+                      <FileSpreadsheet className="h-5 w-5" />
+                      <span>Import</span>
+                    </button>
+                    <button 
                       onClick={handleExport}
                       className="flex items-center justify-center space-x-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 cursor-pointer"
                     >
@@ -1319,7 +1603,7 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="mb-4 flex justify-end">
+                <div className="mb-4 flex justify-between items-center">
                   <div className="flex space-x-2">
                     <button 
                       onClick={expandAllCompanies}
@@ -1333,6 +1617,38 @@ export default function App() {
                       className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
                     >
                       Collapse All
+                    </button>
+                  </div>
+                  {/* Pagination controls for companies list */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      First
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Prev
+                    </button>
+                    <span className="text-sm text-gray-700 px-2">Page {currentPage} / {totalPages}</span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Next
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Last
                     </button>
                   </div>
                 </div>
@@ -1354,7 +1670,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[120px]"
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-normal min-w-[120px]"
                           onClick={() => handleSort('role')}
                         >
                           <div className="flex items-center space-x-1">
@@ -1365,7 +1681,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[120px]"
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-normal min-w-[120px]"
                           onClick={() => handleSort('dateApplied')}
                         >
                           <div className="flex items-center space-x-1">
@@ -1391,14 +1707,14 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {sortedGroupedApplications.length === 0 ? (
+                      {paginatedGroupedApplications.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                             No applications found. Add your first application!
                           </td>
                         </tr>
                       ) : (
-                        sortedGroupedApplications.map((group: any) => (
+                        paginatedGroupedApplications.map((group: any) => (
                           <React.Fragment key={group.companyId}>
                             {/* Company Row */}
                             <tr 
@@ -1412,7 +1728,7 @@ export default function App() {
                                   <ChevronRight className="h-4 w-4 text-gray-500" />
                                 )}
                               </td>
-                              <td className="px-6 py-3 font-medium whitespace-nowrap">
+                              <td className="px-6 py-3 font-medium whitespace-normal break-words">
                                 <span className="inline-flex items-center">
                                   {group.companyName}
                                   <span className="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
@@ -1430,11 +1746,11 @@ export default function App() {
                               group.applications.map(app => (
                                 <tr key={app.id} className="hover:bg-gray-50">
                                   <td className="px-2 py-3"></td>
-                                  <td className="px-6 py-3 pl-10">
+                                  <td className="px-6 py-3 pl-10 whitespace-normal break-words">
                                     <span className="text-gray-400">{group.companyName}</span>
                                   </td>
-                                  <td className="px-6 py-3 whitespace-nowrap">{app.role}</td>
-                                  <td className="px-6 py-3 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
+                                  <td className="px-6 py-3 whitespace-normal break-words">{app.role}</td>
+                                  <td className="px-6 py-3 whitespace-normal break-words">{formatDisplayDate(app.dateApplied)}</td>
                                   <td className="px-6 py-3">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                       ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
