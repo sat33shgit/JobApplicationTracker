@@ -814,15 +814,17 @@ export default function App() {
         let attachments = [];
         if (filesToUpload.length) {
           attachments = await Promise.all(filesToUpload.map(f => uploadFileToServer(updated.id, f)));
-          // Map attachments into metadata.files shape
-          const attachMeta = attachments.map(a => ({ name: a.filename, url: a.url, id: a.id }));
-          // patch job metadata to include attachments
+          // Map attachments into metadata.files shape and merge with any existing files
+          const attachMeta = attachments.map(a => ({ name: a.filename || a.name, url: a.url || a.url, id: a.id }));
+          const existingFiles = (updated.metadata && Array.isArray(updated.metadata.files)) ? updated.metadata.files : [];
+          const mergedFiles = [...existingFiles, ...attachMeta];
+          // patch job metadata to include merged attachments
           await fetch(`/api/jobs/${updated.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: { ...updated.metadata, files: attachMeta } })
+            body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
           });
-          updated.metadata = { ...updated.metadata, files: attachMeta };
+          updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
         }
 
         setApplications(applications.map(app => app.id === editingId ? {
