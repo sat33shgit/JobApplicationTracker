@@ -1051,24 +1051,31 @@ export default function App() {
                                     </span>
                                   </td>
                                   <td className="px-6 py-3">
-                                    <div className="flex space-x-1">
-                                      {app.files.map((file, index) => (
-                                        <a
-                                          key={index}
-                                          href={
-                                            file.url || file.publicUrl || file.url === null
-                                              ? (file.url || `/api/blob-proxy?key=${encodeURIComponent(file.storage_key || file.storageKey || file.key || file.name)}`)
-                                              : '#'
-                                          }
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center hover:underline"
-                                          title={file.name}
-                                        >
-                                          <FileText className="h-3 w-3 mr-1" />
-                                          <span className="truncate max-w-[12rem]">{file.name}</span>
-                                        </a>
-                                      ))}
+                                    <div className="grid grid-cols-2 gap-1 max-w-[28rem]">
+                                      {app.files.map((file, index) => {
+                                        // Prefer server-side route when we have an attachment id so
+                                        // the server can generate signed GET URLs (R2) or proxy private objects.
+                                        const storageKey = file.storage_key || file.storageKey || file.key || null;
+                                        const href = file.id
+                                          ? `/api/uploads/${file.id}`
+                                          : storageKey
+                                            ? `/api/blob-proxy?key=${encodeURIComponent(storageKey)}`
+                                            : (file.url || file.publicUrl) ? (file.url || file.publicUrl) : '#';
+
+                                        return (
+                                          <a
+                                            key={index}
+                                            href={href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-2 py-1 bg-gray-100 text-xs rounded-md flex items-center hover:underline"
+                                            title={file.name}
+                                          >
+                                            <FileText className="h-3 w-3 mr-1 flex-shrink-0" />
+                                            <span className="truncate">{file.name}</span>
+                                          </a>
+                                        );
+                                      })}
                                     </div>
                                   </td>
                                   <td className="px-6 py-3 text-sm font-medium">
