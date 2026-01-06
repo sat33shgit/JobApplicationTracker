@@ -652,31 +652,58 @@ export default function App() {
     <div className="min-h-screen bg-white text-black flex flex-col">
       {/* Header */}
       <header className="bg-white shadow-md py-4 px-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Job Application Tracker</h1>
-          <nav className="hidden md:flex space-x-4">
-            <button 
-              onClick={() => setActiveTab("dashboard")}
-              className={`px-3 py-2 rounded-md ${activeTab === "dashboard" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
-            >
-              Dashboard
-            </button>
-            <button 
-              onClick={() => setActiveTab("applications")}
-              className={`px-3 py-2 rounded-md ${activeTab === "applications" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
-            >
-              Applications
-            </button>
-          </nav>
-          <div className="md:hidden">
-            <select 
-              value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value)}
-              className="border rounded-md px-2 py-1"
-            >
-              <option value="dashboard">Dashboard</option>
-              <option value="applications">Applications</option>
-            </select>
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex-none">
+            <h1 className="text-2xl font-bold">Job Application Tracker</h1>
+          </div>
+
+          <div className="flex-1 flex justify-center items-center">
+            <nav className="hidden md:flex items-center space-x-4">
+              <button 
+                onClick={() => setActiveTab("dashboard")}
+                className={`px-3 py-2 rounded-md ${activeTab === "dashboard" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+              >
+                Dashboard
+              </button>
+              <button 
+                onClick={() => setActiveTab("applications")}
+                className={`px-3 py-2 rounded-md ${activeTab === "applications" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+              >
+                Applications
+              </button>
+              
+            </nav>
+
+            <div className="md:hidden">
+              <select 
+                value={activeTab}
+                onChange={(e) => setActiveTab(e.target.value)}
+                className="border rounded-md px-2 py-1"
+              >
+                <option value="dashboard">Dashboard</option>
+                <option value="applications">Applications</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex-none flex items-center space-x-3">
+            <div className="hidden md:flex">
+              <button
+                onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
+                className="inline-flex items-center justify-center space-x-2 header-add-btn px-4 py-2 rounded-md"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Application</span>
+              </button>
+            </div>
+            <div className="md:hidden inline-block">
+              <button
+                onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
+                className="items-center justify-center header-add-btn px-3 py-1 rounded-md"
+              >
+                <Plus className="h-4 w-4 inline-block" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
