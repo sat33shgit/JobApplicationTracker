@@ -23,7 +23,7 @@ const formatDisplayDate = (isoDate: string) => {
 };
 import { motion } from "motion/react";
 // Using a simple in-app modal for delete confirmation (avoids ref/portal issues)
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Download, Upload, Plus, Search, Calendar, Briefcase, FileText, Filter, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 
 // Initial empty arrays — real data will be loaded from the API on mount
@@ -37,77 +37,73 @@ const statusOptions = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"]
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 // Function to generate mock statistics
-const generateStats = (applications) => {
-  // Get current date
+const generateStats = (applications: any[]) => {
   const now = new Date();
-  
+
   // Daily stats (last 7 days)
-  const dailyStats = [];
+  const dailyStats: Array<{ date: string; count: number }> = [];
   for (let i = 6; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
     const dateString = date.toISOString().split('T')[0];
-    
-    const count = applications.filter(app => app.dateApplied === dateString).length;
-    dailyStats.push({
-      date: formatDisplayDate(date.toISOString()),
-      count
-    });
+    const count = applications.filter((app: any) => app.dateApplied === dateString).length;
+    dailyStats.push({ date: formatDisplayDate(date.toISOString()), count });
   }
-  
+
   // Weekly stats (last 4 weeks)
-  const weeklyStats = [];
+  const weeklyStats: Array<{ week: string; count: number }> = [];
   for (let i = 3; i >= 0; i--) {
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() - (i * 7 + 6));
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() - i * 7);
-    
-    const count = applications.filter(app => {
+    const count = applications.filter((app: any) => {
       const appDate = new Date(app.dateApplied);
       return appDate >= startDate && appDate <= endDate;
     }).length;
-    
-    weeklyStats.push({
-      week: `Week ${4-i}`,
-      count
-    });
+    weeklyStats.push({ week: `Week ${4 - i}`, count });
   }
-  
+
   // Monthly stats (last 6 months)
-  const monthlyStats = [];
+  const monthlyStats: Array<{ month: string; count: number }> = [];
   for (let i = 5; i >= 0; i--) {
     const date = new Date(now);
     date.setMonth(date.getMonth() - i);
     const month = date.toLocaleDateString('en-US', { month: 'short' });
     const year = date.getFullYear();
-    
     const startDate = new Date(year, date.getMonth(), 1);
     const endDate = new Date(year, date.getMonth() + 1, 0);
-    
-    const count = applications.filter(app => {
+    const count = applications.filter((app: any) => {
       const appDate = new Date(app.dateApplied);
       return appDate >= startDate && appDate <= endDate;
     }).length;
-    
-    monthlyStats.push({
-      month,
-      count
-    });
+    monthlyStats.push({ month, count });
   }
-  
+
+  // Yearly stats (last 5 years)
+  const yearlyStats: Array<{ year: string; count: number }> = [];
+  for (let i = 4; i >= 0; i--) {
+    const year = now.getFullYear() - i;
+    const count = applications.filter((app: any) => {
+      const appDate = new Date(app.dateApplied);
+      return appDate.getFullYear() === year;
+    }).length;
+    yearlyStats.push({ year: String(year), count });
+  }
+
   // Status distribution
-  const statusStats = statusOptions.map(status => ({
+  const statusStats = statusOptions.map((status) => ({
     name: status,
-    value: applications.filter(app => app.status === status).length
+    value: applications.filter((app: any) => app.status === status).length,
   }));
-  
+
   return {
     daily: dailyStats,
     weekly: weeklyStats,
     monthly: monthlyStats,
+    yearly: yearlyStats,
     status: statusStats,
-    total: applications.length
+    total: applications.length,
   };
 };
 
@@ -118,6 +114,8 @@ export default function App() {
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
   const stats = React.useMemo(() => generateStats(applications), [applications]);
+  // Exclude zero-value status entries from pie chart to avoid 0% slices
+  const statusData = stats.status.filter((s: any) => (s?.value || 0) > 0);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -759,16 +757,16 @@ export default function App() {
                       Daily
                     </button>
                     <button 
-                      onClick={() => setSelectedTimeframe("weekly")}
-                      className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "weekly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-                    >
-                      Weekly
-                    </button>
-                    <button 
                       onClick={() => setSelectedTimeframe("monthly")}
                       className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
                     >
                       Monthly
+                    </button>
+                    <button 
+                      onClick={() => setSelectedTimeframe("yearly")}
+                      className={`px-3 py-1 text-sm rounded-md ${selectedTimeframe === "yearly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+                    >
+                      Yearly
                     </button>
                   </div>
                 </div>
@@ -779,8 +777,8 @@ export default function App() {
                     <p className="text-3xl font-bold">{stats.total}</p>
                   </div>
                   <div className="bg-green-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-2">Applications This Week</h3>
-                    <p className="text-3xl font-bold">{stats.weekly[3].count}</p>
+                    <h3 className="text-lg font-medium mb-2">Total Companies</h3>
+                    <p className="text-3xl font-bold">{companies.length}</p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4">
                     <h3 className="text-lg font-medium mb-2">Applications This Month</h3>
@@ -794,19 +792,19 @@ export default function App() {
                     <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
-                          data={selectedTimeframe === "daily" ? stats.daily : 
-                                selectedTimeframe === "weekly" ? stats.weekly : stats.monthly}
+                            data={selectedTimeframe === "daily" ? stats.daily : 
+                                  selectedTimeframe === "monthly" ? stats.monthly : selectedTimeframe === "yearly" ? stats.yearly : stats.daily}
                           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
-                            dataKey={selectedTimeframe === "daily" ? "date" : 
-                                    selectedTimeframe === "weekly" ? "week" : "month"} 
+                              dataKey={selectedTimeframe === "daily" ? "date" : 
+                                      selectedTimeframe === "monthly" ? "month" : selectedTimeframe === "yearly" ? "year" : "date"} 
                           />
                           <YAxis allowDecimals={false} />
                           <Tooltip />
                           <Bar dataKey="count">
-                            {(selectedTimeframe === "daily" ? stats.daily : selectedTimeframe === "weekly" ? stats.weekly : stats.monthly).map((entry, idx) => (
+                              {(selectedTimeframe === "daily" ? stats.daily : selectedTimeframe === "monthly" ? stats.monthly : selectedTimeframe === "yearly" ? stats.yearly : stats.daily).map((entry, idx) => (
                               <Cell key={`bar-${idx}`} fill={COLORS[idx % COLORS.length]} />
                             ))}
                           </Bar>
@@ -821,20 +819,21 @@ export default function App() {
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={stats.status}
+                            data={statusData}
                             cx="50%"
                             cy="50%"
                             labelLine={false}
                             outerRadius={80}
                             fill="#8884d8"
                             dataKey="value"
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
                           >
-                            {stats.status.map((entry, index) => (
+                            {statusData.map((entry: any, index: number) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
                           <Tooltip />
+                          <Legend layout="horizontal" verticalAlign="bottom" align="center" />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -864,7 +863,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {sortedApplications.slice(0, 5).map((app) => (
+                      {sortedApplications.filter(a => a.dateApplied <= todayISO).slice(0,10).map((app) => (
                         <tr key={app.id}>
                           <td className="px-6 py-4 whitespace-nowrap">{getCompanyName(app.companyId)}</td>
                           <td className="px-6 py-4 whitespace-nowrap">{app.role}</td>

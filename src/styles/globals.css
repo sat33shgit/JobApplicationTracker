@@ -205,3 +205,18 @@ html {
   outline: none;
   box-shadow: 0 0 0 4px rgba(37,99,235,0.15);
 }
+
+/* Make interactive elements show pointer cursor across the app */
+button,
+a[href],
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+select,
+textarea,
+.clickable,
+.header-add-btn,
+.nav-link {
+  cursor: pointer;
+}
