@@ -829,22 +829,22 @@ export default function App() {
         // After updating job, upload any new files and attach them
         const filesToUpload = Array.isArray(newApplication.files) ? newApplication.files.filter(f => f && f.file) : [];
         let attachments = [];
-        console.debug('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
+        logger.info('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
         if (filesToUpload.length) {
           try {
             attachments = await Promise.all(filesToUpload.map(async (f) => {
               try {
                 const res = await uploadFileToServer(updated.id, f);
-                console.debug('uploadFileToServer result:', res);
+                logger.info('uploadFileToServer result:', res);
                 return res;
               } catch (uerr) {
-                console.error('uploadFileToServer failed for', f.name, uerr);
+                logger.error('uploadFileToServer failed for', f.name, uerr);
                 throw uerr;
               }
             }));
           } catch (e) {
-            console.error('One or more file uploads failed during edit:', e);
-            toast.error('One or more attachments failed to upload. See console.');
+            logger.error('One or more file uploads failed during edit:', e);
+            toast.error('One or more attachments failed to upload.');
             // Continue — do not abort the whole submit; user can retry attachments
           }
 
@@ -859,9 +859,9 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
               });
-              if (!metaResp.ok) console.error('Failed to patch job metadata after uploads', metaResp.status);
+              if (!metaResp.ok) logger.error('Failed to patch job metadata after uploads', metaResp.status);
             } catch (pmErr) {
-              console.error('Failed to patch metadata after uploads', pmErr);
+              logger.error('Failed to patch metadata after uploads', pmErr);
             }
             updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
           }
@@ -1033,6 +1033,24 @@ export default function App() {
       files: []
     });
     setCompanyQuery('');
+    setCompanyDropdownOpen(false);
+    setShowAddForm(true);
+  }, []);
+
+  // Open Add Application form prepopulated for a specific company
+  const openAddForCompany = useCallback((companyId, companyName) => {
+    setEditingId(null);
+    setViewingId(null);
+    setNewApplication({
+      companyId: String(companyId),
+      newCompany: '',
+      role: '',
+      dateApplied: getTodayISO(),
+      status: 'Applied',
+      notes: '',
+      files: []
+    });
+    setCompanyQuery(companyName || '');
     setCompanyDropdownOpen(false);
     setShowAddForm(true);
   }, []);
@@ -1799,8 +1817,20 @@ export default function App() {
                                   </span>
                                 </span>
                               </td>
-                              <td colSpan={5} className="px-6 py-3 text-sm text-gray-500 text-right">
-                                Click to {expandedCompanies[group.companyId] ? 'collapse' : 'expand'}
+                              <td colSpan={5} className="px-6 py-3 text-sm text-gray-500">
+                                <div className="relative">
+                                  <div className="absolute inset-y-0 left-0 right-36 flex items-center justify-center pointer-events-none">
+                                    <div className="text-sm text-gray-500">Click to {expandedCompanies[group.companyId] ? 'collapse' : 'expand'}</div>
+                                  </div>
+                                  <div className="flex items-center justify-end space-x-3 relative z-10">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openAddForCompany(group.companyId, group.companyName); }}
+                                      className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer"
+                                    >
+                                      Add Role
+                                    </button>
+                                  </div>
+                                </div>
                               </td>
                             </tr>
                             
