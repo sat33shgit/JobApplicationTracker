@@ -75,7 +75,9 @@ module.exports = async function (req, res) {
       // Prefer using the storageFilename as the key when saving to R2/local providers.
       saved = await blob.save({ filename: storageFilename, buffer, contentType: _contentType, uploadUrl });
     } catch (err) {
-      console.error('blob.save failed:', err && err.message);
+      // Log error and redact query string from uploadUrl to avoid leaking signatures
+      const redact = (u) => !u ? '<none>' : u.replace(/\?.*$/, '?[REDACTED]');
+      console.error('blob.save failed:', err && err.message, 'uploadUrl:', redact(uploadUrl));
       // Attempt to clean up the DB row we created to avoid orphaned records
       try { await db.query('DELETE FROM attachments WHERE id=$1', [inserted.id]); } catch (e) { console.warn('failed to delete attachment row after save error', e && e.message); }
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });

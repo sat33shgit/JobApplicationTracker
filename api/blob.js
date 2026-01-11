@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 let S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, getSignedUrl;
 try {
   // AWS SDK v3 (used for Cloudflare R2 S3-compatible API)
@@ -143,7 +144,19 @@ async function saveRemote(filename, buffer, opts = {}) {
   try {
     res = await fetch(uploadUrl, { method: 'PUT', headers, body: buffer });
   } catch (fetchErr) {
-    const msg = 'PUT to uploadUrl failed: ' + (fetchErr && fetchErr.message);
+    // If in non-production and explicitly allowed, retry allowing insecure TLS (useful for dev with self-signed certs)
+    let retryErr = null;
+    if (uploadUrl && uploadUrl.startsWith('https://') && process.env.NODE_ENV !== 'production' && process.env.ALLOW_INSECURE_BLOB_TLS === 'true') {
+      try {
+        const agent = new https.Agent({ rejectUnauthorized: false });
+        res = await fetch(uploadUrl, { method: 'PUT', headers, body: buffer, agent });
+      } catch (e) {
+        retryErr = e;
+      }
+    }
+
+    const finalErr = retryErr || fetchErr;
+    const msg = 'PUT to uploadUrl failed: ' + (finalErr && finalErr.message);
     if (enforce) throw new Error(msg);
     // fallback
     const publicPrefix = process.env.VERCEL_BLOB_PUBLIC_URL_PREFIX;
