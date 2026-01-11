@@ -322,6 +322,23 @@ export default function App() {
       // ignore in non-browser environments
     }
   };
+  
+  // Clear search input and reset applications view to default (no search)
+  const clearSearch = () => {
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setCurrentPage(1);
+    setExpandedCompanies({});
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('q');
+      const newQuery = params.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore
+    }
+  };
 
   // Open Applications tab and pass current filters via query params
   const openApplicationsWithFilters = () => {
@@ -1606,15 +1623,24 @@ export default function App() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
                   <h2 className="text-xl font-semibold">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search applications..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
-                      />
-                      <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                    <div className="flex items-center space-x-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search applications..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
+                        />
+                        <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                      </div>
+                      <button
+                        onClick={clearSearch}
+                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50"
+                        aria-label="Clear search"
+                      >
+                        Clear
+                      </button>
                     </div>
                     <button 
                       onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
