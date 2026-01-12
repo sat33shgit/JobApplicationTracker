@@ -305,26 +305,24 @@ export default function App() {
   };
   
   // Clear date range filter
-  const clearDateRange = () => {
+  const clearDateRange = useCallback(() => {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
-    // remove start/end from URL if present
     try {
       const params = new URLSearchParams(window.location.search);
       params.delete('start');
       params.delete('end');
-      // keep timeframe if present
       const newQuery = params.toString();
       const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
       window.history.pushState({}, '', newUrl);
     } catch (e) {
       // ignore in non-browser environments
     }
-  };
+  }, []);
   
   // Clear search input and reset applications view to default (no search)
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchTerm('');
     setDebouncedSearchTerm('');
     setCurrentPage(1);
@@ -338,10 +336,10 @@ export default function App() {
     } catch (e) {
       // ignore
     }
-  };
+  }, []);
 
   // Open Applications tab and pass current filters via query params
-  const openApplicationsWithFilters = () => {
+  const openApplicationsWithFilters = useCallback(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       if (filterStartDate) params.set('start', filterStartDate);
@@ -356,7 +354,36 @@ export default function App() {
       // ignore
     }
     setActiveTab('applications');
-  };
+  }, [filterStartDate, filterEndDate, selectedTimeframe]);
+
+  // Open Applications tab with no filters (clear local filters and URL params)
+  const openApplicationsNoFilters = useCallback(() => {
+    // Clear local filter state
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setDateRangeError('');
+    setSelectedTimeframe('yearly');
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setCurrentPage(1);
+    setExpandedCompanies({});
+
+    // Remove filter/query params from URL
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('start');
+      params.delete('end');
+      params.delete('timeframe');
+      params.delete('q');
+      const newQuery = params.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore in non-browser environments
+    }
+
+    setActiveTab('applications');
+  }, []);
   
   // Compute stats with date range filter
   const stats = useMemo(() => {
@@ -456,6 +483,17 @@ export default function App() {
       // ignore
     }
   }, []);
+
+  // Scroll to top when Applications tab becomes active
+  useEffect(() => {
+    if (activeTab === 'applications') {
+      try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        // ignore in non-browser environments
+      }
+    }
+  }, [activeTab]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
@@ -1572,7 +1610,7 @@ export default function App() {
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-semibold">Recent Applications</h2>
                   <button 
-                    onClick={() => setActiveTab("applications")}
+                    onClick={openApplicationsNoFilters}
                     className="text-blue-600 hover:text-blue-800 cursor-pointer"
                   >
                     View All
