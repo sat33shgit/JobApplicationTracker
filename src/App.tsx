@@ -36,15 +36,23 @@ const statusOptions = ["Applied", "System Rejected", "Preliminary Call", "Interv
 // Colors for charts
 const COLORS = ['#0088FE', '#687530', '#397D58', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
-// Function to generate statistics based on date range and timeframe
-const generateStats = (applications, startDate?: string, endDate?: string, timeframe: string = 'daily') => {
-  // Filter applications by date range if provided
-  const filteredApps = (startDate && endDate) 
-    ? applications.filter(app => {
-        const appDate = app.dateApplied;
-        return appDate >= startDate && appDate <= endDate;
-      })
-    : applications;
+// Function to generate statistics based on date range, timeframe and optional status
+const generateStats = (applications, startDate?: string, endDate?: string, timeframe: string = 'daily', status?: string) => {
+  // Filter applications by date range if provided (use numeric timestamps for speed)
+  let filteredApps = [...applications];
+  if (startDate && endDate) {
+    const sTs = new Date(startDate + 'T00:00:00').getTime();
+    const eTs = new Date(endDate + 'T23:59:59').getTime();
+    filteredApps = applications.filter(app => {
+      const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+      return ts >= sTs && ts <= eTs;
+    });
+  }
+
+  // If a status filter is provided, apply it on top of the date filtering
+  if (status) {
+    filteredApps = filteredApps.filter(app => app.status === status);
+  }
 
   const start = startDate ? new Date(startDate + 'T00:00:00') : new Date();
   const end = endDate ? new Date(endDate + 'T23:59:59') : new Date();
@@ -54,8 +62,12 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
   if (startDate && endDate) {
     const currentDate = new Date(start);
     while (currentDate <= end) {
-      const dateString = currentDate.toISOString().split('T')[0];
-      const count = filteredApps.filter(app => app.dateApplied === dateString).length;
+      const dayStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0).getTime();
+      const dayEnd = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 23, 59, 59).getTime();
+      const count = filteredApps.filter(app => {
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= dayStart && ts <= dayEnd;
+      }).length;
       dailyStats.push({
         date: formatDisplayDate(currentDate.toISOString()),
         count
@@ -68,8 +80,12 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
     for (let i = 6; i >= 0; i--) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
-      const dateString = date.toISOString().split('T')[0];
-      const count = applications.filter(app => app.dateApplied === dateString).length;
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0).getTime();
+      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59).getTime();
+      const count = filteredApps.filter(app => {
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= dayStart && ts <= dayEnd;
+      }).length;
       dailyStats.push({
         date: formatDisplayDate(date.toISOString()),
         count
@@ -86,8 +102,8 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
       const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
       
       const count = filteredApps.filter(app => {
-        const appDate = new Date(app.dateApplied);
-        return appDate >= monthStart && appDate <= monthEnd;
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
       }).length;
       
       monthlyStats.push({
@@ -106,9 +122,9 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
       const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
       
-      const count = applications.filter(app => {
-        const appDate = new Date(app.dateApplied);
-        return appDate >= monthStart && appDate <= monthEnd;
+      const count = filteredApps.filter(app => {
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
       }).length;
       
       monthlyStats.push({
@@ -126,8 +142,8 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
       const yearEnd = new Date(year, 11, 31);
       
       const count = filteredApps.filter(app => {
-        const appDate = new Date(app.dateApplied);
-        return appDate >= yearStart && appDate <= yearEnd;
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
       }).length;
       
       yearlyStats.push({
@@ -143,9 +159,9 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
       const yearStart = new Date(year, 0, 1);
       const yearEnd = new Date(year, 11, 31);
       
-      const count = applications.filter(app => {
-        const appDate = new Date(app.dateApplied);
-        return appDate >= yearStart && appDate <= yearEnd;
+      const count = filteredApps.filter(app => {
+        const ts = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
+        return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
       }).length;
       
       yearlyStats.push({
@@ -156,9 +172,9 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
   }
   
   // Status distribution - based on filtered applications
-  const statusStats = statusOptions.map(status => ({
-    name: status,
-    value: filteredApps.filter(app => app.status === status).length
+  const statusStats = statusOptions.map(s => ({
+    name: s,
+    value: filteredApps.filter(app => app.status === s).length
   }));
   
   return {
@@ -174,6 +190,34 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
 export default function App() {
   // State
   const [activeTab, setActiveTab] = useState("dashboard");
+  // Render pie labels outside the pie to avoid overlap
+  const renderPieLabel = (props: any) => {
+    const { cx, cy, midAngle, outerRadius, percent, index } = props;
+    const rad = Math.PI / 180;
+    const pct = Math.round((percent || 0) * 100);
+    if (pct === 0) return null;
+
+    // Increase radius for very small slices so labels don't overlap the pie
+    let extra = 18;
+    if (pct <= 2) extra += 20;
+    else if (pct <= 5) extra += 12;
+
+    const radius = outerRadius + extra; // distance from center
+    const xBase = cx + radius * Math.cos(-midAngle * rad);
+    const yBase = cy + radius * Math.sin(-midAngle * rad);
+
+    // Small-slice labels can still collide; apply a small vertical stagger based on index
+    const stagger = pct <= 5 ? (index % 2 === 0 ? -8 : 8) : 0;
+    const x = xBase;
+    const y = yBase + stagger;
+
+    const fill = COLORS[index % COLORS.length] || '#333';
+    return (
+      <text x={x} y={y} fill={fill} fontSize={12} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+        {pct}%
+      </text>
+    );
+  };
   const [companies, setCompanies] = useState(initialCompanies);
   const [applications, setApplications] = useState(initialApplications);
   const [selectedTimeframe, setSelectedTimeframe] = useState("yearly");
@@ -182,6 +226,7 @@ export default function App() {
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [dateRangeError, setDateRangeError] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState('');
   
   // Get max allowed range based on timeframe
   const getMaxRangeDays = (timeframe: string) => {
@@ -309,10 +354,12 @@ export default function App() {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
+    setSelectedStatus('');
     try {
       const params = new URLSearchParams(window.location.search);
       params.delete('start');
       params.delete('end');
+      params.delete('status');
       const newQuery = params.toString();
       const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
       window.history.pushState({}, '', newUrl);
@@ -347,9 +394,13 @@ export default function App() {
       if (filterEndDate) params.set('end', filterEndDate);
       else params.delete('end');
       if (selectedTimeframe) params.set('timeframe', selectedTimeframe);
+      if (selectedStatus) params.set('status', selectedStatus);
+      else params.delete('status');
       const q = params.toString();
       const newUrl = q ? `${window.location.pathname}?${q}` : window.location.pathname;
       window.history.pushState({}, '', newUrl);
+      if (selectedStatus) params.set('status', selectedStatus);
+      else params.delete('status');
     } catch (e) {
       // ignore
     }
@@ -357,7 +408,7 @@ export default function App() {
     setExpandedCompanies({});
     setCurrentPage(1);
     setActiveTab('applications');
-  }, [filterStartDate, filterEndDate, selectedTimeframe]);
+  }, [filterStartDate, filterEndDate, selectedTimeframe, selectedStatus]);
 
   // Open Applications tab with no filters (clear local filters and URL params)
   const openApplicationsNoFilters = useCallback(() => {
@@ -366,6 +417,7 @@ export default function App() {
     setFilterEndDate('');
     setDateRangeError('');
     setSelectedTimeframe('yearly');
+    setSelectedStatus('');
     setSearchTerm('');
     setDebouncedSearchTerm('');
     setCurrentPage(1);
@@ -388,7 +440,7 @@ export default function App() {
     setActiveTab('applications');
   }, []);
   
-  // Compute stats with date range filter
+  // Compute stats with date range & status filter
   const stats = useMemo(() => {
     const hasDateSelection = filterStartDate || filterEndDate;
     const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
@@ -399,7 +451,7 @@ export default function App() {
         daily: [],
         monthly: [],
         yearly: [],
-        status: statusOptions.map(status => ({ name: status, value: 0 })),
+        status: statusOptions.map(s => ({ name: s, value: 0 })),
         total: 0
       };
     }
@@ -408,9 +460,10 @@ export default function App() {
       applications, 
       hasValidRange ? filterStartDate : undefined, 
       hasValidRange ? filterEndDate : undefined,
-      selectedTimeframe
+      selectedTimeframe,
+      selectedStatus || undefined
     );
-  }, [applications, filterStartDate, filterEndDate, dateRangeError, selectedTimeframe]);
+  }, [applications, filterStartDate, filterEndDate, dateRangeError, selectedTimeframe, selectedStatus]);
   
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -442,11 +495,13 @@ export default function App() {
 
           // Normalize applied_date to YYYY-MM-DD so daily stats match
           const dateApplied = normalizeDateToInput(r.applied_date);
+          const dateAppliedTs = dateApplied ? new Date(dateApplied + 'T00:00:00').getTime() : 0;
           return {
             id: r.id,
             companyId,
             role: r.title || '',
             dateApplied,
+            dateAppliedTs,
             status,
             notes: r.metadata?.notes || '',
             files: r.metadata?.files || [],
@@ -476,10 +531,12 @@ export default function App() {
       const start = params.get('start');
       const end = params.get('end');
       const timeframe = params.get('timeframe');
-      if (start || end || timeframe) {
+      const status = params.get('status');
+      if (start || end || timeframe || status) {
         if (start) setFilterStartDate(start);
         if (end) setFilterEndDate(end);
         if (timeframe) setSelectedTimeframe(timeframe);
+        if (status) setSelectedStatus(status);
         setActiveTab('applications');
       }
     } catch (e) {
@@ -576,8 +633,8 @@ export default function App() {
     return [...applications]
       .filter(a => a.dateApplied)
       .sort((a, b) => {
-        const da = new Date(a.dateApplied).getTime();
-        const db = new Date(b.dateApplied).getTime();
+        const da = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
+        const db = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
         return db - da;
       })
       .slice(0, 10);
@@ -589,15 +646,17 @@ export default function App() {
     const company = companyMap.get(app.companyId) || '';
     const searchString = `${company} ${app.role} ${app.status} ${app.notes}`.toLowerCase();
     if (!searchString.includes(debouncedSearchTerm.toLowerCase())) return false;
+    // Apply status filter if selected so Applications page reflects dashboard selection
+    if (selectedStatus && app.status !== selectedStatus) return false;
     // If a valid date range is selected, apply date filtering here so the Applications
     // page shows only rows within the selected range when navigated from Dashboard.
     const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
     if (!hasValidRange) return true;
-    const s = new Date(filterStartDate + 'T00:00:00');
-    const e = new Date(filterEndDate + 'T23:59:59');
-    const d = new Date(app.dateApplied + 'T00:00:00');
+    const s = new Date(filterStartDate + 'T00:00:00').getTime();
+    const e = new Date(filterEndDate + 'T23:59:59').getTime();
+    const d = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
     return d >= s && d <= e;
-  }), [sortedApplications, companies, debouncedSearchTerm, filterStartDate, filterEndDate, dateRangeError]);
+  }), [sortedApplications, companies, debouncedSearchTerm, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
 
   const filteredApplicationsCount = useMemo(() => filteredApplications.length, [filteredApplications]);
   const filteredCompaniesCount = useMemo(() => {
@@ -609,14 +668,28 @@ export default function App() {
   // Apply date range filters (if any) on top of search-filtered applications for summary counts
   const filteredForCounts = useMemo(() => {
     const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
-    if (!hasValidRange) return filteredApplications;
-    const s = new Date(filterStartDate + 'T00:00:00');
-    const e = new Date(filterEndDate + 'T23:59:59');
-    return filteredApplications.filter(app => {
-      const d = new Date(app.dateApplied + 'T00:00:00');
+    // Start from the search-filtered applications
+    let base = filteredApplications;
+
+    // If a status is selected, apply it now so total counts reflect status filter
+    if (selectedStatus) {
+      base = base.filter(app => app.status === selectedStatus);
+    }
+
+    // If there's no date range, return base (which may have status applied)
+    if (!hasValidRange) return base;
+
+    const s = new Date(filterStartDate + 'T00:00:00').getTime();
+    const e = new Date(filterEndDate + 'T23:59:59').getTime();
+
+    // Apply date filter on top of base using timestamps
+    base = base.filter(app => {
+      const d = app.dateAppliedTs || (app.dateApplied ? new Date(app.dateApplied + 'T00:00:00').getTime() : 0);
       return d >= s && d <= e;
     });
-  }, [filteredApplications, filterStartDate, filterEndDate, dateRangeError]);
+
+    return base;
+  }, [filteredApplications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
 
   const totalCompanies = useMemo(() => {
     const set = new Set<number>();
@@ -646,8 +719,8 @@ export default function App() {
     // Sort applications within each group by applied date (descending)
     Object.values(groups).forEach((g: any) => {
       g.applications.sort((a: any, b: any) => {
-        const ta = a.dateApplied ? new Date(a.dateApplied).getTime() : 0;
-        const tb = b.dateApplied ? new Date(b.dateApplied).getTime() : 0;
+        const ta = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
+        const tb = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
         return tb - ta;
       });
     });
@@ -926,7 +999,8 @@ export default function App() {
           ...app,
           companyId,
           role: updated.title,
-              dateApplied: normalizeDateToInput(updated.applied_date),
+          dateApplied: normalizeDateToInput(updated.applied_date),
+          dateAppliedTs: updated.applied_date ? new Date(normalizeDateToInput(updated.applied_date) + 'T00:00:00').getTime() : (app.dateAppliedTs || 0),
           status: updated.status,
           notes: updated.metadata?.notes || '',
           files: updated.metadata?.files || [],
@@ -962,6 +1036,7 @@ export default function App() {
           companyId,
           role: created.title,
           dateApplied: normalizeDateToInput(created.applied_date),
+          dateAppliedTs: created.applied_date ? new Date(normalizeDateToInput(created.applied_date) + 'T00:00:00').getTime() : 0,
           status: created.status,
           notes: created.metadata?.notes || '',
           files: created.metadata?.files || [],
@@ -1267,6 +1342,7 @@ export default function App() {
             companyId: created.company_id || created.companyId || 0,
             role: created.title,
             dateApplied: normalizeDateToInput(created.applied_date),
+            dateAppliedTs: created.applied_date ? new Date(normalizeDateToInput(created.applied_date) + 'T00:00:00').getTime() : 0,
             status: created.status,
             notes: created.metadata?.notes || '',
             files: created.metadata?.files || [],
@@ -1511,16 +1587,27 @@ export default function App() {
                         </>
                       )}
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700">Status:</label>
+                      <select
+                        value={selectedStatus}
+                        onChange={(e) => setSelectedStatus(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">All Statuses</option>
+                        {statusOptions.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2 ml-auto">
                       <button
                         onClick={clearDateRange}
-                        disabled={!(filterStartDate || filterEndDate)}
-                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
+                        disabled={!(filterStartDate || filterEndDate || selectedStatus)}
+                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                       >
                         Clear
                       </button>
-                    </div>
-                    <div className="flex items-center gap-2 ml-auto">
                       <span className="text-sm text-gray-600 bg-gray-200 px-3 py-1.5 rounded-md font-medium whitespace-nowrap">
                         Max: {selectedTimeframe === 'daily' ? '30 days' : selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
                       </span>
@@ -1585,12 +1672,8 @@ export default function App() {
                             outerRadius={70}
                             fill="#8884d8"
                             dataKey="value"
-                            label={({ value }) => {
-                              const total = stats.status.reduce((sum, s) => sum + s.value, 0);
-                              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-                              return pct > 0 ? `${pct}%` : '';
-                            }}
-                            labelLine={false}
+                            label={renderPieLabel}
+                            labelLine={true}
                           >
                             {stats.status.filter(s => s.value > 0).map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={COLORS[statusOptions.indexOf(entry.name) % COLORS.length]} />
@@ -1613,8 +1696,8 @@ export default function App() {
                         <div className="mt-4 flex justify-center">
                           <button
                             onClick={openApplicationsWithFilters}
-                            disabled={!(filterStartDate || filterEndDate)}
-                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
+                            disabled={stats.total === 0}
+                            className={`px-4 py-2 text-sm rounded-md transition-colors ${stats.total === 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                           >
                             View Results
                           </button>
@@ -1678,10 +1761,14 @@ export default function App() {
               className="space-y-6"
             >
               <div className="bg-white rounded-lg shadow-md p-6">
-                  {(filterStartDate || filterEndDate) && !dateRangeError && (
+                  {(filterStartDate || filterEndDate || selectedStatus) && !dateRangeError && (
                     <div className="mb-4 p-3 rounded-md bg-blue-50 border border-blue-100 flex items-center justify-between">
                       <div className="text-sm text-blue-700">
-                        Showing {filteredApplicationsCount} applications / {filteredCompaniesCount} companies for: {filterStartDate ? formatDisplayDate(filterStartDate) : 'Any'} to {filterEndDate ? formatDisplayDate(filterEndDate) : 'Any'}
+                        Showing {filteredApplicationsCount} applications / {filteredCompaniesCount} companies
+                        {(filterStartDate || filterEndDate) && !dateRangeError ? (
+                          <span> for: {filterStartDate ? formatDisplayDate(filterStartDate) : 'Any'} to {filterEndDate ? formatDisplayDate(filterEndDate) : 'Any'}</span>
+                        ) : null}
+                        {selectedStatus ? <span> · Status: {selectedStatus}</span> : null}
                       </div>
                       <div className="flex items-center space-x-2">
                         <button
