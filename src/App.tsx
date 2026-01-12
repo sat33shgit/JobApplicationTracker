@@ -574,6 +574,13 @@ export default function App() {
     const id = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
     return () => clearTimeout(id);
   }, [searchTerm]);
+  // Focus the new company input when user selects "Add new company"
+  useEffect(() => {
+    if (newApplication.companyId === 'new') {
+      // focus after input mounts
+      setTimeout(() => newCompanyRef.current && newCompanyRef.current.focus(), 0);
+    }
+  }, [newApplication.companyId]);
   const [editingId, setEditingId] = useState(null);
   const [viewingId, setViewingId] = useState(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -583,6 +590,7 @@ export default function App() {
   const coverInputRef = useRef(null);
   const jobDescInputRef = useRef(null);
   const appDocInputRef = useRef(null);
+  const newCompanyRef = useRef<HTMLInputElement | null>(null);
   const [dragResume, setDragResume] = useState(false);
   const [dragCover, setDragCover] = useState(false);
   const [dragJobDesc, setDragJobDesc] = useState(false);
@@ -754,12 +762,18 @@ export default function App() {
     return sortedGroupedApplications.slice(start, start + pageSize);
   }, [sortedGroupedApplications, currentPage]);
 
-  // Toggle expand/collapse for a company
+  // Toggle expand/collapse for a company.
+  // When expanding a company, collapse all other company groups so only one is open at a time.
   const toggleCompanyExpand = useCallback((companyId) => {
-    setExpandedCompanies(prev => ({
-      ...prev,
-      [companyId]: !prev[companyId]
-    }));
+    setExpandedCompanies(prev => {
+      const isOpen = !!prev[companyId];
+      if (isOpen) {
+        // collapse if already open
+        return {};
+      }
+      // expand this one and collapse others
+      return { [companyId]: true };
+    });
   }, []);
 
   // Expand all companies
@@ -2167,6 +2181,7 @@ export default function App() {
                           placeholder="Enter company name *"
                           value={newApplication.newCompany}
                           onChange={handleInputChange}
+                          ref={newCompanyRef}
                           readOnly={Boolean(viewingId)}
                           className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
                           aria-required="true"
