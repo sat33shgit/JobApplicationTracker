@@ -353,6 +353,9 @@ export default function App() {
     } catch (e) {
       // ignore
     }
+    // ensure Applications page shows collapsed rows and resets pagination
+    setExpandedCompanies({});
+    setCurrentPage(1);
     setActiveTab('applications');
   }, [filterStartDate, filterEndDate, selectedTimeframe]);
 
@@ -1498,7 +1501,7 @@ export default function App() {
                       <button
                         onClick={clearDateRange}
                         disabled={!(filterStartDate || filterEndDate)}
-                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                       >
                         Clear
                       </button>
@@ -1597,7 +1600,7 @@ export default function App() {
                           <button
                             onClick={openApplicationsWithFilters}
                             disabled={!(filterStartDate || filterEndDate)}
-                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                           >
                             View Results
                           </button>
@@ -1669,7 +1672,7 @@ export default function App() {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={clearDateRange}
-                          className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50"
+                          className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer"
                         >
                           Clear filter
                         </button>
@@ -1692,7 +1695,7 @@ export default function App() {
                       </div>
                       <button
                         onClick={clearSearch}
-                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50"
+                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                         aria-label="Clear search"
                       >
                         Clear
