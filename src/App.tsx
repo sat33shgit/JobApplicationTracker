@@ -31,10 +31,10 @@ const initialCompanies: Array<{ id: number; name: string }> = [];
 const initialApplications: Array<any> = [];
 
 // Status options
-const statusOptions = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
+const statusOptions = ["Applied", "System Rejected", "Preliminary Call", "Interview", "Offer", "Rejected", "Withdrawn"];
 
 // Colors for charts
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const COLORS = ['#0088FE', '#687530', '#397D58', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 // Function to generate statistics based on date range and timeframe
 const generateStats = (applications, startDate?: string, endDate?: string, timeframe: string = 'daily') => {
@@ -625,21 +625,35 @@ export default function App() {
   }, [filteredForCounts]);
 
   // Group applications by company - memoized
-  const groupedApplications = useMemo(() => filteredApplications.reduce((acc, app) => {
-    const companyId = app.companyId;
-    const companyName = companyMap.get(companyId) || 'Unknown';
-    
-    if (!acc[companyId]) {
-      acc[companyId] = {
-        companyId,
-        companyName,
-        applications: []
-      };
-    }
-    
-    acc[companyId].applications.push(app);
-    return acc;
-  }, {} as Record<number, any>), [filteredApplications, companies]);
+  // Also sort each group's applications by `dateApplied` descending (newest first)
+  const groupedApplications = useMemo(() => {
+    const groups = filteredApplications.reduce((acc, app) => {
+      const companyId = app.companyId;
+      const companyName = companyMap.get(companyId) || 'Unknown';
+
+      if (!acc[companyId]) {
+        acc[companyId] = {
+          companyId,
+          companyName,
+          applications: []
+        };
+      }
+
+      acc[companyId].applications.push(app);
+      return acc;
+    }, {} as Record<number, any>);
+
+    // Sort applications within each group by applied date (descending)
+    Object.values(groups).forEach((g: any) => {
+      g.applications.sort((a: any, b: any) => {
+        const ta = a.dateApplied ? new Date(a.dateApplied).getTime() : 0;
+        const tb = b.dateApplied ? new Date(b.dateApplied).getTime() : 0;
+        return tb - ta;
+      });
+    });
+
+    return groups;
+  }, [filteredApplications, companies, companyMap]);
 
   // Sort grouped applications - memoized
   const sortedGroupedApplications = useMemo(() => Object.values(groupedApplications).sort((a: any, b: any) => {
