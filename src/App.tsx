@@ -305,26 +305,41 @@ export default function App() {
   };
   
   // Clear date range filter
-  const clearDateRange = () => {
+  const clearDateRange = useCallback(() => {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
-    // remove start/end from URL if present
     try {
       const params = new URLSearchParams(window.location.search);
       params.delete('start');
       params.delete('end');
-      // keep timeframe if present
       const newQuery = params.toString();
       const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
       window.history.pushState({}, '', newUrl);
     } catch (e) {
       // ignore in non-browser environments
     }
-  };
+  }, []);
+  
+  // Clear search input and reset applications view to default (no search)
+  const clearSearch = useCallback(() => {
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setCurrentPage(1);
+    setExpandedCompanies({});
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('q');
+      const newQuery = params.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   // Open Applications tab and pass current filters via query params
-  const openApplicationsWithFilters = () => {
+  const openApplicationsWithFilters = useCallback(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       if (filterStartDate) params.set('start', filterStartDate);
@@ -338,8 +353,40 @@ export default function App() {
     } catch (e) {
       // ignore
     }
+    // ensure Applications page shows collapsed rows and resets pagination
+    setExpandedCompanies({});
+    setCurrentPage(1);
     setActiveTab('applications');
-  };
+  }, [filterStartDate, filterEndDate, selectedTimeframe]);
+
+  // Open Applications tab with no filters (clear local filters and URL params)
+  const openApplicationsNoFilters = useCallback(() => {
+    // Clear local filter state
+    setFilterStartDate('');
+    setFilterEndDate('');
+    setDateRangeError('');
+    setSelectedTimeframe('yearly');
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    setCurrentPage(1);
+    setExpandedCompanies({});
+
+    // Remove filter/query params from URL
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('start');
+      params.delete('end');
+      params.delete('timeframe');
+      params.delete('q');
+      const newQuery = params.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.pushState({}, '', newUrl);
+    } catch (e) {
+      // ignore in non-browser environments
+    }
+
+    setActiveTab('applications');
+  }, []);
   
   // Compute stats with date range filter
   const stats = useMemo(() => {
@@ -439,6 +486,17 @@ export default function App() {
       // ignore
     }
   }, []);
+
+  // Scroll to top when Applications tab becomes active
+  useEffect(() => {
+    if (activeTab === 'applications') {
+      try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        // ignore in non-browser environments
+      }
+    }
+  }, [activeTab]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
@@ -812,22 +870,22 @@ export default function App() {
         // After updating job, upload any new files and attach them
         const filesToUpload = Array.isArray(newApplication.files) ? newApplication.files.filter(f => f && f.file) : [];
         let attachments = [];
-        console.debug('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
+        logger.info('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
         if (filesToUpload.length) {
           try {
             attachments = await Promise.all(filesToUpload.map(async (f) => {
               try {
                 const res = await uploadFileToServer(updated.id, f);
-                console.debug('uploadFileToServer result:', res);
+                logger.info('uploadFileToServer result:', res);
                 return res;
               } catch (uerr) {
-                console.error('uploadFileToServer failed for', f.name, uerr);
+                logger.error('uploadFileToServer failed for', f.name, uerr);
                 throw uerr;
               }
             }));
           } catch (e) {
-            console.error('One or more file uploads failed during edit:', e);
-            toast.error('One or more attachments failed to upload. See console.');
+            logger.error('One or more file uploads failed during edit:', e);
+            toast.error('One or more attachments failed to upload.');
             // Continue — do not abort the whole submit; user can retry attachments
           }
 
@@ -842,9 +900,9 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
               });
-              if (!metaResp.ok) console.error('Failed to patch job metadata after uploads', metaResp.status);
+              if (!metaResp.ok) logger.error('Failed to patch job metadata after uploads', metaResp.status);
             } catch (pmErr) {
-              console.error('Failed to patch metadata after uploads', pmErr);
+              logger.error('Failed to patch metadata after uploads', pmErr);
             }
             updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
           }
@@ -1016,6 +1074,24 @@ export default function App() {
       files: []
     });
     setCompanyQuery('');
+    setCompanyDropdownOpen(false);
+    setShowAddForm(true);
+  }, []);
+
+  // Open Add Application form prepopulated for a specific company
+  const openAddForCompany = useCallback((companyId, companyName) => {
+    setEditingId(null);
+    setViewingId(null);
+    setNewApplication({
+      companyId: String(companyId),
+      newCompany: '',
+      role: '',
+      dateApplied: getTodayISO(),
+      status: 'Applied',
+      notes: '',
+      files: []
+    });
+    setCompanyQuery(companyName || '');
     setCompanyDropdownOpen(false);
     setShowAddForm(true);
   }, []);
@@ -1425,7 +1501,7 @@ export default function App() {
                       <button
                         onClick={clearDateRange}
                         disabled={!(filterStartDate || filterEndDate)}
-                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                       >
                         Clear
                       </button>
@@ -1524,7 +1600,7 @@ export default function App() {
                           <button
                             onClick={openApplicationsWithFilters}
                             disabled={!(filterStartDate || filterEndDate)}
-                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                            className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
                           >
                             View Results
                           </button>
@@ -1537,7 +1613,7 @@ export default function App() {
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-semibold">Recent Applications</h2>
                   <button 
-                    onClick={() => setActiveTab("applications")}
+                    onClick={openApplicationsNoFilters}
                     className="text-blue-600 hover:text-blue-800 cursor-pointer"
                   >
                     View All
@@ -1596,7 +1672,7 @@ export default function App() {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={clearDateRange}
-                          className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50"
+                          className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer"
                         >
                           Clear filter
                         </button>
@@ -1606,15 +1682,24 @@ export default function App() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
                   <h2 className="text-xl font-semibold">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Search applications..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
-                      />
-                      <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                    <div className="flex items-center space-x-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search applications..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
+                        />
+                        <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                      </div>
+                      <button
+                        onClick={clearSearch}
+                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        aria-label="Clear search"
+                      >
+                        Clear
+                      </button>
                     </div>
                     <button 
                       onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
@@ -1773,8 +1858,20 @@ export default function App() {
                                   </span>
                                 </span>
                               </td>
-                              <td colSpan={5} className="px-6 py-3 text-sm text-gray-500 text-right">
-                                Click to {expandedCompanies[group.companyId] ? 'collapse' : 'expand'}
+                              <td colSpan={5} className="px-6 py-3 text-sm text-gray-500">
+                                <div className="relative">
+                                  <div className="absolute inset-y-0 left-0 right-36 flex items-center justify-center pointer-events-none">
+                                    <div className="text-sm text-gray-500">Click to {expandedCompanies[group.companyId] ? 'collapse' : 'expand'}</div>
+                                  </div>
+                                  <div className="flex items-center justify-end space-x-3 relative z-10">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openAddForCompany(group.companyId, group.companyName); }}
+                                      className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer"
+                                    >
+                                      Add Role
+                                    </button>
+                                  </div>
+                                </div>
                               </td>
                             </tr>
                             
