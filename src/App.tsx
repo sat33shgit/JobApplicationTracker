@@ -1169,6 +1169,12 @@ export default function App() {
       setApplications(prev => prev.filter(a => a.id !== deleteTarget.id));
       setDeleteTarget(null);
       setConfirmOpen(false);
+      setShowAddForm(false);
+      setEditingId(null);
+      setViewingId(null);
+      setCompanyQuery('');
+      setCompanyDropdownOpen(false);
+      setActiveTab('applications');
     } catch (err) {
       // ...existing code...
       toast.error('Failed to delete application. See console for details.');
@@ -2450,6 +2456,21 @@ export default function App() {
                       >
                         Cancel
                       </button>
+                      {editingId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Open confirmation dialog for delete
+                            const app = applications.find(a => a.id === editingId);
+                            if (!app) return;
+                            setDeleteTarget(app);
+                            setConfirmOpen(true);
+                          }}
+                          className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => formRef.current?.requestSubmit?.() ?? formRef.current?.submit?.()}
