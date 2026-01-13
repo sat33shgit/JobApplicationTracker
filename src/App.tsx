@@ -1038,6 +1038,13 @@ export default function App() {
           statusNotes: updated.status_notes || ''
         } : app));
         setEditingId(null);
+        // Show the correct page after modify
+        if (editSourceTab === 'applications') {
+          setActiveTab('applications');
+        } else {
+          setActiveTab('dashboard');
+        }
+        setEditSourceTab(null);
       } else {
         // Create new job on server
         const resp = await fetch('/api/jobs', {
@@ -1151,11 +1158,14 @@ export default function App() {
   };
 
   // Handle delete application (open confirmation)
+  // Track where the delete popup was invoked from
+  const [deleteSourceTab, setDeleteSourceTab] = useState(null);
   const handleDelete = (id) => {
     const app = applications.find(a => a.id === id);
     if (!app) return;
     setDeleteTarget(app);
     setConfirmOpen(true);
+    setDeleteSourceTab(activeTab); // Track current tab (dashboard or applications)
   };
 
   const confirmDelete = async () => {
@@ -1174,7 +1184,13 @@ export default function App() {
       setViewingId(null);
       setCompanyQuery('');
       setCompanyDropdownOpen(false);
-      setActiveTab('applications');
+      // Show the correct page after delete
+      if (deleteSourceTab === 'applications') {
+        setActiveTab('applications');
+      } else {
+        setActiveTab('dashboard');
+      }
+      setDeleteSourceTab(null);
     } catch (err) {
       // ...existing code...
       toast.error('Failed to delete application. See console for details.');
@@ -1762,6 +1778,7 @@ export default function App() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Applied</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right select-none">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1779,6 +1796,31 @@ export default function App() {
                                 'bg-gray-100 text-gray-800'}`}>
                               {app.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end space-x-2">
+                              <button
+                                title="View"
+                                className="text-gray-600 hover:text-gray-900 cursor-pointer"
+                                onClick={() => handleView(app.id)}
+                              >
+                                <Eye className="h-5 w-5" />
+                              </button>
+                              <button
+                                title="Edit"
+                                className="text-blue-600 hover:text-blue-900 cursor-pointer"
+                                onClick={() => handleEdit(app.id)}
+                              >
+                                <Edit className="h-5 w-5" />
+                              </button>
+                              <button
+                                title="Delete"
+                                className="text-red-600 hover:text-red-900 cursor-pointer"
+                                onClick={() => handleDelete(app.id)}
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
