@@ -3,7 +3,7 @@ import SimpleModal from './components/SimpleModal';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
-import logger from './utils/logger';
+// ...existing code...
 import { motion } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
@@ -31,10 +31,28 @@ const initialCompanies: Array<{ id: number; name: string }> = [];
 const initialApplications: Array<any> = [];
 
 // Status options
-const statusOptions = ["Applied", "System Rejected", "Preliminary Call", "Interview", "Offer", "Rejected", "Withdrawn"];
+const statusOptions = [
+  "Applied",
+  "System Rejected",
+  "Email Enquiry",
+  "Preliminary Call",
+  "Interview",
+  "Offer",
+  "Rejected",
+  "Withdrawn"
+];
 
 // Colors for charts
-const COLORS = ['#0088FE', '#687530', '#397D58', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const COLORS = [
+  '#0088FE', // Applied
+  '#687530', // System Rejected
+  '#F39C12', // Email Enquiry (orange/yellow for visibility)
+  '#397D58', // Preliminary Call
+  '#00C49F', // Interview
+  '#FFBB28', // Offer
+  '#FF8042', // Rejected
+  '#8884d8'  // Withdrawn
+];
 
 // Function to generate statistics based on date range, timeframe and optional status
 const generateStats = (applications, startDate?: string, endDate?: string, timeframe: string = 'daily', status?: string) => {
@@ -475,7 +493,7 @@ export default function App() {
       try {
         const resp = await fetch('/api/jobs');
         if (!resp.ok) {
-          logger.error('Failed to fetch jobs', resp.status);
+          // ...existing code...
           return;
         }
         const rows = await resp.json();
@@ -516,7 +534,7 @@ export default function App() {
           setApplications(apps);
         }
       } catch (err) {
-        logger.error('Error loading jobs', err);
+        // ...existing code...
       }
     }
 
@@ -531,12 +549,11 @@ export default function App() {
       const start = params.get('start');
       const end = params.get('end');
       const timeframe = params.get('timeframe');
-      const status = params.get('status');
-      if (start || end || timeframe || status) {
+      // Remove status filter auto-application
+      if (start || end || timeframe) {
         if (start) setFilterStartDate(start);
         if (end) setFilterEndDate(end);
         if (timeframe) setSelectedTimeframe(timeframe);
-        if (status) setSelectedStatus(status);
         setActiveTab('applications');
       }
     } catch (e) {
@@ -971,21 +988,21 @@ export default function App() {
         // After updating job, upload any new files and attach them
         const filesToUpload = Array.isArray(newApplication.files) ? newApplication.files.filter(f => f && f.file) : [];
         let attachments = [];
-        logger.info('Edit flow: filesToUpload count =', filesToUpload.length, filesToUpload.map(f => f.name));
+        // ...existing code...
         if (filesToUpload.length) {
           try {
             attachments = await Promise.all(filesToUpload.map(async (f) => {
               try {
                 const res = await uploadFileToServer(updated.id, f);
-                logger.info('uploadFileToServer result:', res);
+                // ...existing code...
                 return res;
               } catch (uerr) {
-                logger.error('uploadFileToServer failed for', f.name, uerr);
+                // ...existing code...
                 throw uerr;
               }
             }));
           } catch (e) {
-            logger.error('One or more file uploads failed during edit:', e);
+            // ...existing code...
             toast.error('One or more attachments failed to upload.');
             // Continue — do not abort the whole submit; user can retry attachments
           }
@@ -1001,9 +1018,9 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
               });
-              if (!metaResp.ok) logger.error('Failed to patch job metadata after uploads', metaResp.status);
+              // ...existing code...
             } catch (pmErr) {
-              logger.error('Failed to patch metadata after uploads', pmErr);
+              // ...existing code...
             }
             updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
           }
@@ -1082,7 +1099,7 @@ export default function App() {
       setIsSaving(false);
     } catch (err) {
       setIsSaving(false);
-      logger.error(err);
+      // ...existing code...
       toast.error('Failed to save application. See console for details.');
     }
   };
@@ -1153,7 +1170,7 @@ export default function App() {
       setDeleteTarget(null);
       setConfirmOpen(false);
     } catch (err) {
-      logger.error('delete failed', err && err.message);
+      // ...existing code...
       toast.error('Failed to delete application. See console for details.');
     }
   };
@@ -1371,7 +1388,7 @@ export default function App() {
       toast.success(`Import finished. Created: ${createdCount}, Failed: ${failedCount}`);
       setShowImportModal(false);
     } catch (err) {
-      logger.error('import failed', err);
+      // ...existing code...
       toast.error('Import failed. See console for details.');
     } finally {
       setIsImporting(false);
