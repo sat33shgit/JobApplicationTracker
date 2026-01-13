@@ -39,7 +39,8 @@ const statusOptions = [
   "Interview",
   "Offer",
   "Rejected",
-  "Withdrawn"
+  "Withdrawn",
+  "No Update"
 ];
 
 // Colors for charts
@@ -51,7 +52,8 @@ const COLORS = [
   '#00C49F', // Interview
   '#FFBB28', // Offer
   '#FF8042', // Rejected
-  '#8884d8'  // Withdrawn
+  '#8884d8', // Withdrawn
+  '#A0AEC0'  // No Update (gray)
 ];
 
 // Function to generate statistics based on date range, timeframe and optional status
