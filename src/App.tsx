@@ -26,7 +26,7 @@ const formatDisplayDate = (isoDate: string) => {
   return `${day}-${month}-${year}`;
 };
 
-// Initial empty arrays — real data will be loaded from the API on mount
+// Initial empty arrays for company and application data
 const initialCompanies: Array<{ id: number; name: string }> = [];
 const initialApplications: Array<any> = [];
 
@@ -196,7 +196,6 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
     name: s,
     value: filteredApps.filter(app => app.status === s).length
   }));
-  
   return {
     daily: dailyStats,
     monthly: monthlyStats,
@@ -252,8 +251,8 @@ export default function App() {
   const getMaxRangeDays = (timeframe: string) => {
     switch (timeframe) {
       case 'daily': return 30;
-      case 'monthly': return 365; // 12 months
-      case 'yearly': return 3650; // 10 years
+      case 'monthly': return 365;
+      case 'yearly': return 3650;
       default: return 30;
     }
   };
@@ -309,10 +308,7 @@ export default function App() {
   };
   
   // Get year from date string
-  const getYearFromDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    return dateStr.split('-')[0];
-  };
+  const getYearFromDate = (dateStr: string) => dateStr ? dateStr.split('-')[0] : '';
   
   // Generate year options (last 20 years to current year)
   const yearOptionsDesc = useMemo(() => {
@@ -363,10 +359,7 @@ export default function App() {
   const getMonthYearFromDate = (dateStr: string) => {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
-    if (parts.length >= 2) {
-      return `${parts[0]}-${parts[1]}`;
-    }
-    return '';
+    return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : '';
   };
   
   // Clear date range filter
@@ -756,14 +749,41 @@ export default function App() {
   }, [filteredApplications, companies, companyMap]);
 
   // Sort grouped applications - memoized
-  const sortedGroupedApplications = useMemo(() => Object.values(groupedApplications).sort((a: any, b: any) => {
-    if (sortConfig.key === 'companyId') {
-      return sortConfig.direction === 'asc'
-        ? a.companyName.localeCompare(b.companyName)
-        : b.companyName.localeCompare(a.companyName);
+  const sortedGroupedApplications = useMemo(() => {
+    // Sort groups (companies)
+    const groups = Object.values(groupedApplications).sort((a: any, b: any) => {
+      if (sortConfig.key === 'companyId') {
+        return sortConfig.direction === 'asc'
+          ? a.companyName.localeCompare(b.companyName)
+          : b.companyName.localeCompare(a.companyName);
+      }
+      return 0;
+    });
+
+    // Sort applications within each group if sorting by role, dateApplied, or status
+    if (["role", "dateApplied", "status"].includes(sortConfig.key)) {
+      groups.forEach((g: any) => {
+        g.applications = [...g.applications].sort((a: any, b: any) => {
+          let aValue = a[sortConfig.key] || '';
+          let bValue = b[sortConfig.key] || '';
+          // For dateApplied, compare as dates
+          if (sortConfig.key === "dateApplied") {
+            aValue = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
+            bValue = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+            return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+          }
+          // For role and status, compare as strings
+          if (typeof aValue === 'string' && typeof bValue === 'string') {
+            return sortConfig.direction === 'asc'
+              ? aValue.localeCompare(bValue)
+              : bValue.localeCompare(aValue);
+          }
+          return 0;
+        });
+      });
     }
-    return 0;
-  }), [groupedApplications, sortConfig]);
+    return groups;
+  }, [groupedApplications, sortConfig]);
 
   // Pagination for companies list (applications page)
   const [currentPage, setCurrentPage] = useState(1);
@@ -1870,7 +1890,7 @@ export default function App() {
                           type="text"
                           placeholder="Search applications..."
                           value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onChange={(e) => setSearchTerm(e.target.value.trim())}
                           className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
                         />
                         <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -1974,7 +1994,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-normal min-w-[120px]"
+                          className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[80px] max-w-[180px]"
                           onClick={() => handleSort('role')}
                         >
                           <div className="flex items-center space-x-1">
@@ -1985,7 +2005,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-normal min-w-[120px]"
+                          className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[100px] max-w-[120px]"
                           onClick={() => handleSort('dateApplied')}
                         >
                           <div className="flex items-center space-x-1">
@@ -1996,7 +2016,7 @@ export default function App() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                          className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[90px] max-w-[120px]"
                           onClick={() => handleSort('status')}
                         >
                           <div className="flex items-center space-x-1">
@@ -2065,9 +2085,20 @@ export default function App() {
                                   <td className="px-6 py-3 pl-10 whitespace-normal break-words">
                                     <span className="text-gray-400">{group.companyName}</span>
                                   </td>
-                                  <td className="px-6 py-3 whitespace-normal break-words">{app.role}</td>
-                                  <td className="px-6 py-3 whitespace-normal break-words">{formatDisplayDate(app.dateApplied)}</td>
-                                  <td className="px-6 py-3">
+                                  <td className="px-4 py-3 max-w-[180px] overflow-hidden" style={{display: 'table-cell'}}>
+                                    <span style={{
+                                      display: 'inline-block',
+                                      maxWidth: '180px',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'normal',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      display: '-webkit-box',
+                                    }}>{app.role}</span>
+                                  </td>
+                                  <td className="px-4 py-3 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
+                                  <td className="px-4 py-3 whitespace-nowrap">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                       ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
                                         app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
