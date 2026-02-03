@@ -7,6 +7,7 @@ import { normalizeDateToInput, getTodayISO } from './utils/date';
 import { motion } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
+import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
@@ -1742,7 +1743,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      <label className="text-sm text-gray-700">Status:</label>
+                      <label className="text-sm text-gray-700 mr-2">Status:</label>
                       <select
                         value={selectedStatus}
                         onChange={(e) => setSelectedStatus(e.target.value)}
@@ -1971,35 +1972,9 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2">
                   <h2 className="text-xl font-semibold">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="flex items-center space-x-2">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search applications..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value.trim())}
-                          className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
-                        />
-                        <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                      </div>
-                      <button
-                        onClick={clearSearch}
-                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                        aria-label="Clear search"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <button 
-                      onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
-                      className="flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer"
-                    >
-                      <Plus className="h-5 w-5" />
-                      <span>Add Application</span>
-                    </button>
                     <button 
                       onClick={handleImportClick}
                       className="flex items-center justify-center space-x-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 cursor-pointer"
@@ -2013,6 +1988,29 @@ export default function App() {
                     >
                       <FileSpreadsheet className="h-5 w-5" />
                       <span>Export</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search row aligned with table left margin */}
+                <div className="mb-6 px-6">
+                  <div className="flex items-center space-x-2" >
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        type="text"
+                        placeholder="Search applications..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value.trim())}
+                        className="pl-10 pr-4 py-2 border rounded-md w-full"
+                      />
+                      <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                    </div>
+                    <button
+                      onClick={clearSearch}
+                      className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      aria-label="Clear search"
+                    >
+                      Clear
                     </button>
                   </div>
                 </div>
@@ -2269,10 +2267,44 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination controls below the table (using UI Button variants) */}
+                <div className="mt-6 pt-4 flex items-center justify-end space-x-2 pr-4">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Prev
+                  </button>
+                  <span className="text-sm text-gray-700 px-2">Page {currentPage} / {totalPages}</span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Next
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Last
+                  </button>
+                </div>
+
               </div>
             </motion.div>
           )}
-          
+
           {/* Add/Edit Application Form Modal */}
           {showAddForm && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
