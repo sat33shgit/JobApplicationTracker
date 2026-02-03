@@ -40,6 +40,7 @@ const statusOptions = [
   "Offer",
   "Rejected",
   "Withdrawn",
+  "Paused",
   "No Update"
 ];
 
@@ -53,6 +54,7 @@ const COLORS = [
   '#FFBB28', // Offer
   '#FF8042', // Rejected
   '#8884d8', // Withdrawn
+  '#D35400', // Paused (dark orange)
   '#A0AEC0'  // No Update (gray)
 ];
 
