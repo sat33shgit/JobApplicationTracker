@@ -11,6 +11,36 @@ module.exports = async function (req, res) {
   if (!id) return res.status(400).json({ error: 'missing id' });
 
   try {
+    // Handle DELETE request - delete individual attachment
+    if (req.method === 'DELETE') {
+      const result = await db.query('SELECT * FROM attachments WHERE id = $1', [id]);
+      if (result.rowCount === 0) return res.status(404).json({ error: 'not found' });
+      const att = result.rows[0];
+
+      // Try to delete from storage (R2 or local)
+      let blob = null;
+      try {
+        blob = require('../blob');
+      } catch (e) {
+        console.warn('blob helper load failed, skipping storage delete', e && e.message);
+      }
+
+      if (blob && typeof blob.delete === 'function') {
+        try {
+          await blob.delete({ key: att.storage_key, url: att.url });
+        } catch (e) {
+          console.warn('Failed to delete blob for attachment', att.id, e && e.message);
+        }
+      }
+
+      // Delete from database
+      await db.query('DELETE FROM attachments WHERE id = $1', [id]);
+
+      // Return the deleted attachment info so client can update state
+      return res.status(200).json({ deleted: true, id: att.id, job_id: att.job_id });
+    }
+
+    // Handle GET request - serve/redirect to the file
     const result = await db.query('SELECT * FROM attachments WHERE id = $1', [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'not found' });
     const att = result.rows[0];
