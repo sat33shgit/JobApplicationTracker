@@ -568,6 +568,13 @@ export default function App() {
       }
     }
   }, [activeTab]);
+
+  // When user selects the Dashboard tab, default the timeframe to 'daily'
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      setSelectedTimeframe('daily');
+    }
+  }, [activeTab]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
@@ -602,6 +609,7 @@ export default function App() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const formDisabled = Boolean(viewingId) || isSaving;
   const fileInputRef = useRef(null);
   const newCompanyRef = useRef<HTMLInputElement | null>(null);
   const [dragFiles, setDragFiles] = useState(false);
@@ -680,11 +688,13 @@ export default function App() {
     return s.size;
   }, [filteredApplications]);
 
-  // Apply date range filters (if any) on top of search-filtered applications for summary counts
+  // Apply date range and status filters for summary counts.
+  // IMPORTANT: Start from the full applications list so UI searches
+  // on the Applications page do NOT affect the Dashboard totals.
   const filteredForCounts = useMemo(() => {
     const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
-    // Start from the search-filtered applications
-    let base = filteredApplications;
+    // Start from the full unfiltered applications list (do NOT include search term)
+    let base = applications;
 
     // If a status is selected, apply it now so total counts reflect status filter
     if (selectedStatus) {
@@ -704,7 +714,7 @@ export default function App() {
     });
 
     return base;
-  }, [filteredApplications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
+  }, [applications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
 
   const totalCompanies = useMemo(() => {
     const set = new Set<number>();
@@ -2126,8 +2136,7 @@ export default function App() {
                                     <span className="text-gray-400">{group.companyName}</span>
                                   </td>
                                   <td className="px-4 py-3 max-w-[180px] overflow-hidden" style={{display: 'table-cell'}}>
-                                    <span style={{
-                                      display: 'inline-block',
+                                    <span title={app.role} aria-label={app.role} style={{
                                       maxWidth: '180px',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
@@ -2264,13 +2273,13 @@ export default function App() {
                           }}
                           onFocus={() => setCompanyDropdownOpen(true)}
                           placeholder="Type to search or add a company"
-                          readOnly={Boolean(viewingId)}
+                          readOnly={formDisabled}
                           className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
                       </div>
 
-                      {companyDropdownOpen && !viewingId && (
+                      {companyDropdownOpen && !formDisabled && (
                         <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
                           <button
                             type="button"
@@ -2321,7 +2330,7 @@ export default function App() {
                           value={newApplication.newCompany}
                           onChange={handleInputChange}
                           ref={newCompanyRef}
-                          readOnly={Boolean(viewingId)}
+                          readOnly={formDisabled}
                           className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
@@ -2337,7 +2346,7 @@ export default function App() {
                         placeholder="e.g., Frontend Engineer *"
                         value={newApplication.role}
                         onChange={handleInputChange}
-                        readOnly={Boolean(viewingId)}
+                        readOnly={formDisabled}
                         className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -2352,7 +2361,7 @@ export default function App() {
                         max={todayISO}
                         value={newApplication.dateApplied}
                         onChange={handleInputChange}
-                        disabled={Boolean(viewingId)}
+                        disabled={formDisabled}
                         className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -2365,7 +2374,7 @@ export default function App() {
                         name="status"
                         value={newApplication.status}
                         onChange={handleInputChange}
-                        disabled={Boolean(viewingId)}
+                        disabled={formDisabled}
                         className="w-full border rounded-md px-3 py-2"
                         required
                       >
@@ -2382,7 +2391,7 @@ export default function App() {
                         placeholder="e.g., applied via LinkedIn"
                         value={newApplication.notes}
                         onChange={handleInputChange}
-                        readOnly={Boolean(viewingId)}
+                        readOnly={formDisabled}
                         className="w-full border rounded-md px-3 py-2 h-24"
                       />
                     </div>
@@ -2428,7 +2437,7 @@ export default function App() {
                                     </span>
                                   )}
                                 </div>
-                                {!viewingId && (
+                                {!formDisabled && (
                                   <button 
                                     type="button"
                                     onClick={() => removeFile(file)}
@@ -2444,7 +2453,7 @@ export default function App() {
                         )}
 
                         {/* Show files marked for deletion */}
-                        {filesToDelete.length > 0 && !viewingId && (
+                        {filesToDelete.length > 0 && !formDisabled && (
                           <div className="border border-red-200 bg-red-50 rounded-md divide-y divide-red-200">
                             <div className="px-2 py-1 text-xs font-medium text-red-600">
                               Files to be deleted on save:
@@ -2462,6 +2471,7 @@ export default function App() {
                                   onClick={() => restoreFile(file)}
                                   className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs"
                                   title="Restore file"
+                                  disabled={formDisabled}
                                 >
                                   Undo
                                 </button>
@@ -2470,7 +2480,7 @@ export default function App() {
                           </div>
                         )}
 
-                        {!viewingId && (
+                        {!formDisabled && (
                           <>
                             <input
                               type="file"
@@ -2533,6 +2543,7 @@ export default function App() {
                           setFilesToDelete([]); // Clear files marked for deletion
                         }}
                         className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        disabled={isSaving}
                       >
                         Cancel
                       </button>
@@ -2547,6 +2558,7 @@ export default function App() {
                             setConfirmOpen(true);
                           }}
                           className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                          disabled={isSaving}
                         >
                           Delete
                         </button>
