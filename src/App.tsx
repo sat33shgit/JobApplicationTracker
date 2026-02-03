@@ -595,22 +595,15 @@ export default function App() {
   }, [newApplication.companyId]);
   const [editingId, setEditingId] = useState(null);
   const [viewingId, setViewingId] = useState(null);
+  const [editSourceTab, setEditSourceTab] = useState(null);
+  const [filesToDelete, setFilesToDelete] = useState<Array<{ id: number; name: string }>>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
-  const coverInputRef = useRef(null);
-  const jobDescInputRef = useRef(null);
-  const appDocInputRef = useRef(null);
   const newCompanyRef = useRef<HTMLInputElement | null>(null);
-  const [dragResume, setDragResume] = useState(false);
-  const [dragCover, setDragCover] = useState(false);
-  const [dragJobDesc, setDragJobDesc] = useState(false);
-  const [dragAppDoc, setDragAppDoc] = useState(false);
-  const dragResumeCounter = useRef(0);
-  const dragCoverCounter = useRef(0);
-  const dragJobDescCounter = useRef(0);
-  const dragAppDocCounter = useRef(0);
+  const [dragFiles, setDragFiles] = useState(false);
+  const dragFilesCounter = useRef(0);
   const formRef = useRef<HTMLFormElement | null>(null);
   const todayISO = getTodayISO();
   
@@ -838,14 +831,14 @@ export default function App() {
   }, []);
 
   // Accept an array-like FileList or array of File objects and attach them
-  const handleFiles = (filesLike, fileType) => {
-    const files = Array.from(filesLike || []);
+  const handleFiles = (filesLike: FileList | File[]) => {
+    const files = Array.from(filesLike || []) as File[];
     if (files.length === 0) return;
 
-    const newFiles = files.map(file => ({
+    const newFiles = files.map((file: File) => ({
       file,
       name: file.name,
-      type: fileType,
+      type: 'document',
       url: null
     }));
 
@@ -853,8 +846,8 @@ export default function App() {
   };
 
   // Handle file upload from input change events
-  const handleFileUpload = (e, fileType) => {
-    handleFiles(e.target.files, fileType);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) handleFiles(e.target.files);
   };
 
   // Handle form submission
@@ -887,6 +880,11 @@ export default function App() {
     }
 
     // Build payload for API (don't include File objects; attachments upload happens after job is created/updated)
+    // Preserve existing uploaded files (those without a `file` property)
+    const existingUploadedFiles = newApplication.files
+      .filter(f => f && !f.file && f.id)
+      .map(f => ({ name: f.name, url: f.url, id: f.id }));
+    
     const payload = {
       title: newApplication.role,
       company: companyMap.get(companyId) || (newApplication.newCompany || null),
@@ -894,9 +892,21 @@ export default function App() {
       applied_date: newApplication.dateApplied,
       metadata: {
         notes: newApplication.notes || null,
-        files: []
+        files: existingUploadedFiles
       }
     };
+
+    // Delete files that were marked for deletion
+    if (filesToDelete.length > 0) {
+      for (const file of filesToDelete) {
+        try {
+          await fetch(`/api/uploads/${file.id}`, { method: 'DELETE' });
+        } catch (err) {
+          // deletion failure logged to server/dev console if needed
+        }
+      }
+      setFilesToDelete([]);
+    }
 
     // helper: create signed URL (server will call Vercel) and PUT file bytes, then persist metadata
     const uploadFileToServer = async (jobId, fileObj) => {
@@ -1023,8 +1033,9 @@ export default function App() {
                 throw uerr;
               }
             }));
-          } catch (e) {
+            } catch (e) {
             // ...existing code...
+            // upload error handled silently; show user-facing toast
             toast.error('One or more attachments failed to upload.');
             // Continue — do not abort the whole submit; user can retry attachments
           }
@@ -1124,6 +1135,7 @@ export default function App() {
       });
       setCompanyQuery('');
       setCompanyDropdownOpen(false);
+      setFilesToDelete([]); // Clear files marked for deletion
       setShowAddForm(false);
       setIsSaving(false);
     } catch (err) {
@@ -1151,8 +1163,10 @@ export default function App() {
     });
     // prefill combo input
     setCompanyQuery(companyName);
+    setFilesToDelete([]); // Clear any previous deletion marks
     
     setEditingId(id);
+    setEditSourceTab(activeTab); // Track which tab edit was started from
     setShowAddForm(true);
   };
 
@@ -1439,12 +1453,36 @@ export default function App() {
     }
   };
 
-  // Remove file from application
-  const removeFile = (fileName) => {
+  // Mark file for deletion (actual deletion happens on Update)
+  const removeFile = (file: { id?: number; name: string; url?: string }) => {
+    // If file has an id, it's already uploaded - mark for deletion on save
+    if (file.id) {
+      setFilesToDelete(prev => [...prev, { id: file.id!, name: file.name }]);
+    }
+    
+    // Remove from local state (visual removal)
     setNewApplication(prev => ({
       ...prev,
-      files: prev.files.filter(file => file.name !== fileName)
+      files: prev.files.filter(f => !(f.name === file.name && f.id === file.id))
     }));
+  };
+
+  // Restore a file that was marked for deletion
+  const restoreFile = (file: { id: number; name: string }) => {
+    // Remove from filesToDelete
+    setFilesToDelete(prev => prev.filter(f => f.id !== file.id));
+    
+    // Re-add to files list - we need to get the full file info from applications
+    const app = applications.find(a => a.id === editingId);
+    if (app) {
+      const originalFile = app.files.find(f => f.id === file.id);
+      if (originalFile) {
+        setNewApplication(prev => ({
+          ...prev,
+          files: [...prev.files, originalFile]
+        }));
+      }
+    }
   };
 
   return (
@@ -2200,6 +2238,7 @@ export default function App() {
                         });
                         setCompanyQuery('');
                         setCompanyDropdownOpen(false);
+                        setFilesToDelete([]); // Clear files marked for deletion
                       }}
                       className="text-gray-500 hover:text-gray-700"
                     >
@@ -2362,142 +2401,105 @@ export default function App() {
                     )}
                     
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Files</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Documents</label>
                       <div className="space-y-2">
-                        {newApplication.files.map((file, index) => (
-                          <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
-                            <div className="flex items-center">
-                              <FileText className="h-4 w-4 mr-2 text-gray-500" />
-                              <span className="text-sm">{file.name}</span>
+                        {newApplication.files.length > 0 && (
+                          <div className="border rounded-md divide-y">
+                            {newApplication.files.map((file, index) => (
+                              <div key={file.id || index} className="flex items-center justify-between p-2 hover:bg-gray-50">
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <FileText className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
+                                  {file.id ? (
+                                    <a
+                                      href={`/api/uploads/${file.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-blue-600 hover:underline truncate"
+                                      title={file.name}
+                                    >
+                                      {file.name}
+                                    </a>
+                                  ) : (
+                                    <span className="text-sm text-gray-700 truncate" title={file.name}>
+                                      {file.name}
+                                      <span className="ml-2 text-xs text-gray-400">(pending upload)</span>
+                                    </span>
+                                  )}
+                                </div>
+                                {!viewingId && (
+                                  <button 
+                                    type="button"
+                                    onClick={() => removeFile(file)}
+                                    className="ml-2 text-red-500 hover:text-red-700 flex-shrink-0"
+                                    title="Mark for deletion"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Show files marked for deletion */}
+                        {filesToDelete.length > 0 && !viewingId && (
+                          <div className="border border-red-200 bg-red-50 rounded-md divide-y divide-red-200">
+                            <div className="px-2 py-1 text-xs font-medium text-red-600">
+                              Files to be deleted on save:
                             </div>
-                            {!viewingId && (
-                              <button 
-                                type="button"
-                                onClick={() => removeFile(file.name)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            )}
+                            {filesToDelete.map((file) => (
+                              <div key={file.id} className="flex items-center justify-between p-2">
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <FileText className="h-4 w-4 mr-2 text-red-400 flex-shrink-0" />
+                                  <span className="text-sm text-red-600 line-through truncate" title={file.name}>
+                                    {file.name}
+                                  </span>
+                                </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => restoreFile(file)}
+                                  className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs"
+                                  title="Restore file"
+                                >
+                                  Undo
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
 
-                        <div className="text-sm text-gray-500 mb-2">Drag & drop files onto any upload button, or click a button to select files.</div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                          <div>
-                            {!viewingId && (
-                              <>
-                                <input
-                                  type="file"
-                                  ref={fileInputRef}
-                                  className="hidden"
-                                  onChange={(e) => handleFileUpload(e, 'resume')}
-                                />
-                                <div
-                                  onDragOver={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
-                                  onDragEnter={(e) => { e.preventDefault(); dragResumeCounter.current++; setDragResume(true); }}
-                                  onDragLeave={(e) => { e.preventDefault(); dragResumeCounter.current = Math.max(0, dragResumeCounter.current - 1); if (dragResumeCounter.current === 0) setDragResume(false); }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    dragResumeCounter.current = 0;
-                                    setDragResume(false);
-                                    if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files, 'resume');
-                                  }}
-                                  onClick={() => fileInputRef.current?.click()}
-                                  className={`min-w-[180px] h-10 flex items-center justify-center space-x-2 px-3 rounded-md text-sm cursor-pointer ${dragResume ? 'ring-2 ring-blue-300 bg-blue-50' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  <span className="truncate">Upload Resume</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          <div>
-                            {!viewingId && (
-                              <>
-                                <input
-                                  type="file"
-                                  ref={coverInputRef}
-                                  className="hidden"
-                                  onChange={(e) => handleFileUpload(e, 'coverLetter')}
-                                />
-                                <div
-                                  onDragOver={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
-                                  onDragEnter={(e) => { e.preventDefault(); dragCoverCounter.current++; setDragCover(true); }}
-                                  onDragLeave={(e) => { e.preventDefault(); dragCoverCounter.current = Math.max(0, dragCoverCounter.current - 1); if (dragCoverCounter.current === 0) setDragCover(false); }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    dragCoverCounter.current = 0;
-                                    setDragCover(false);
-                                    if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files, 'coverLetter');
-                                  }}
-                                  onClick={() => (coverInputRef.current as HTMLInputElement)?.click()}
-                                  className={`min-w-[180px] h-10 flex items-center justify-center space-x-2 px-3 rounded-md text-sm cursor-pointer ${dragCover ? 'ring-2 ring-blue-300 bg-blue-50' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  <span className="truncate">Upload Cover Letter</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          <div>
-                            {!viewingId && (
-                              <>
-                                <input
-                                  type="file"
-                                  ref={jobDescInputRef}
-                                  className="hidden"
-                                  onChange={(e) => handleFileUpload(e, 'jobDescription')}
-                                />
-                                <div
-                                  onDragOver={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
-                                  onDragEnter={(e) => { e.preventDefault(); dragJobDescCounter.current++; setDragJobDesc(true); }}
-                                  onDragLeave={(e) => { e.preventDefault(); dragJobDescCounter.current = Math.max(0, dragJobDescCounter.current - 1); if (dragJobDescCounter.current === 0) setDragJobDesc(false); }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    dragJobDescCounter.current = 0;
-                                    setDragJobDesc(false);
-                                    if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files, 'jobDescription');
-                                  }}
-                                  onClick={() => (jobDescInputRef.current as HTMLInputElement)?.click()}
-                                  className={`min-w-[180px] h-10 flex items-center justify-center space-x-2 px-3 rounded-md text-sm cursor-pointer ${dragJobDesc ? 'ring-2 ring-blue-300 bg-blue-50' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  <span className="truncate">Upload Job Description</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          <div>
-                            {!viewingId && (
-                              <>
-                                <input
-                                  type="file"
-                                  ref={appDocInputRef}
-                                  className="hidden"
-                                  onChange={(e) => handleFileUpload(e, 'applicationDoc')}
-                                />
-                                <div
-                                  onDragOver={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
-                                  onDragEnter={(e) => { e.preventDefault(); dragAppDocCounter.current++; setDragAppDoc(true); }}
-                                  onDragLeave={(e) => { e.preventDefault(); dragAppDocCounter.current = Math.max(0, dragAppDocCounter.current - 1); if (dragAppDocCounter.current === 0) setDragAppDoc(false); }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    dragAppDocCounter.current = 0;
-                                    setDragAppDoc(false);
-                                    if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files, 'applicationDoc');
-                                  }}
-                                  onClick={() => (appDocInputRef.current as HTMLInputElement)?.click()}
-                                  className={`min-w-[180px] h-10 flex items-center justify-center space-x-2 px-3 rounded-md text-sm cursor-pointer ${dragAppDoc ? 'ring-2 ring-blue-300 bg-blue-50' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  <span className="truncate">Upload Application Doc</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                        {!viewingId && (
+                          <>
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              className="hidden"
+                              multiple
+                              onChange={handleFileUpload}
+                            />
+                            <div
+                              onDragOver={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+                              onDragEnter={(e) => { e.preventDefault(); dragFilesCounter.current++; setDragFiles(true); }}
+                              onDragLeave={(e) => { e.preventDefault(); dragFilesCounter.current = Math.max(0, dragFilesCounter.current - 1); if (dragFilesCounter.current === 0) setDragFiles(false); }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                dragFilesCounter.current = 0;
+                                setDragFiles(false);
+                                if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
+                              }}
+                              onClick={() => fileInputRef.current?.click()}
+                              className={`w-full h-24 flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-colors ${dragFiles ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
+                            >
+                              <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                              <span className="text-sm text-gray-600">
+                                Drag & drop files here, or <span className="text-blue-600">click to browse</span>
+                              </span>
+                              <span className="text-xs text-gray-400 mt-1">
+                                Upload resumes, cover letters, job descriptions, or any related documents
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                     
@@ -2526,6 +2528,7 @@ export default function App() {
                           setEditingId(null);
                           setCompanyQuery('');
                           setCompanyDropdownOpen(false);
+                          setFilesToDelete([]); // Clear files marked for deletion
                         }}
                         className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                       >
@@ -2548,7 +2551,15 @@ export default function App() {
                       )}
                       <button
                         type="button"
-                        onClick={() => formRef.current?.requestSubmit?.() ?? formRef.current?.submit?.()}
+                        onClick={() => {
+                          if (formRef.current) {
+                            if (typeof formRef.current.requestSubmit === 'function') {
+                              formRef.current.requestSubmit();
+                            } else if (typeof formRef.current.submit === 'function') {
+                              formRef.current.submit();
+                            }
+                          }
+                        }}
                         disabled={isSaving}
                         className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
                       >
