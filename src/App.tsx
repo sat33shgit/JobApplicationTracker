@@ -7,6 +7,7 @@ import { normalizeDateToInput, getTodayISO } from './utils/date';
 import { motion } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
+import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
@@ -568,6 +569,13 @@ export default function App() {
       }
     }
   }, [activeTab]);
+
+  // When user selects the Dashboard tab, default the timeframe to 'daily'
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      setSelectedTimeframe('daily');
+    }
+  }, [activeTab]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
@@ -602,6 +610,7 @@ export default function App() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const formDisabled = Boolean(viewingId) || isSaving;
   const fileInputRef = useRef(null);
   const newCompanyRef = useRef<HTMLInputElement | null>(null);
   const [dragFiles, setDragFiles] = useState(false);
@@ -680,11 +689,13 @@ export default function App() {
     return s.size;
   }, [filteredApplications]);
 
-  // Apply date range filters (if any) on top of search-filtered applications for summary counts
+  // Apply date range and status filters for summary counts.
+  // IMPORTANT: Start from the full applications list so UI searches
+  // on the Applications page do NOT affect the Dashboard totals.
   const filteredForCounts = useMemo(() => {
     const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
-    // Start from the search-filtered applications
-    let base = filteredApplications;
+    // Start from the full unfiltered applications list (do NOT include search term)
+    let base = applications;
 
     // If a status is selected, apply it now so total counts reflect status filter
     if (selectedStatus) {
@@ -704,7 +715,7 @@ export default function App() {
     });
 
     return base;
-  }, [filteredApplications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
+  }, [applications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
 
   const totalCompanies = useMemo(() => {
     const set = new Set<number>();
@@ -1198,6 +1209,35 @@ export default function App() {
   // Handle delete application (open confirmation)
   // Track where the delete popup was invoked from
   const [deleteSourceTab, setDeleteSourceTab] = useState(null);
+
+  // Inline status change for application rows (applications page)
+  const handleInlineStatusChange = async (appId: number, newStatus: string) => {
+    // avoid concurrent updates
+    setInlineStatusSaving(prev => ({ ...prev, [appId]: true }));
+    try {
+      const resp = await fetch(`/api/jobs/${appId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!resp.ok) throw new Error('Failed to update status');
+      const updated = await resp.json();
+
+      setApplications(prev => prev.map(a => a.id === appId ? {
+        ...a,
+        status: updated.status || newStatus,
+        // prefer server status_notes when provided, otherwise append a local history line
+        statusNotes: updated.status_notes || (a.statusNotes || '')
+      } : a));
+
+      toast.success('Status updated');
+    } catch (err) {
+      toast.error('Failed to update status');
+    } finally {
+      setInlineStatusSaving(prev => ({ ...prev, [appId]: false }));
+    }
+  };
+  const [inlineStatusSaving, setInlineStatusSaving] = useState<Record<number, boolean>>({});
   const handleDelete = (id) => {
     const app = applications.find(a => a.id === id);
     if (!app) return;
@@ -1703,7 +1743,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      <label className="text-sm text-gray-700">Status:</label>
+                      <label className="text-sm text-gray-700 mr-2">Status:</label>
                       <select
                         value={selectedStatus}
                         onChange={(e) => setSelectedStatus(e.target.value)}
@@ -1823,7 +1863,7 @@ export default function App() {
               
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold">Recent Applications</h2>
+                  <h2 className="text-xl font-semibold">Recent Applications (Top 10)</h2>
                   <button 
                     onClick={openApplicationsNoFilters}
                     className="text-blue-600 hover:text-blue-800 cursor-pointer"
@@ -1850,14 +1890,25 @@ export default function App() {
                           <td className="px-6 py-4">{app.role}</td>
                           <td className="px-6 py-4">{formatDisplayDate(app.dateApplied)}</td>
                           <td className="px-6 py-4">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                              ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
-                                app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
-                                app.status === 'Offer' ? 'bg-green-100 text-green-800' : 
-                                app.status === 'Rejected' ? 'bg-red-100 text-red-800' : 
-                                'bg-gray-100 text-gray-800'}`}>
-                              {app.status}
-                            </span>
+                            <div className="relative inline-block">
+                              <select
+                                value={app.status}
+                                onChange={(e) => handleInlineStatusChange(app.id, e.target.value)}
+                                disabled={!!inlineStatusSaving[app.id]}
+                                className="px-2 py-1 text-xs leading-5 font-semibold rounded-full border bg-white"
+                                aria-label={`Change status for ${app.role}`}
+                              >
+                                {statusOptions.map(s => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                              {inlineStatusSaving[app.id] && (
+                                <svg className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end space-x-2">
@@ -1921,35 +1972,9 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2">
                   <h2 className="text-xl font-semibold">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="flex items-center space-x-2">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search applications..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value.trim())}
-                          className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64"
-                        />
-                        <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                      </div>
-                      <button
-                        onClick={clearSearch}
-                        className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                        aria-label="Clear search"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <button 
-                      onClick={() => { setShowAddForm(true); setCompanyQuery(''); setEditingId(null); }}
-                      className="flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer"
-                    >
-                      <Plus className="h-5 w-5" />
-                      <span>Add Application</span>
-                    </button>
                     <button 
                       onClick={handleImportClick}
                       className="flex items-center justify-center space-x-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 cursor-pointer"
@@ -1963,6 +1988,29 @@ export default function App() {
                     >
                       <FileSpreadsheet className="h-5 w-5" />
                       <span>Export</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search row aligned with table left margin */}
+                <div className="mb-6 px-6">
+                  <div className="flex items-center space-x-2" >
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        type="text"
+                        placeholder="Search applications..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value.trim())}
+                        className="pl-10 pr-4 py-2 border rounded-md w-full"
+                      />
+                      <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                    </div>
+                    <button
+                      onClick={clearSearch}
+                      className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                      aria-label="Clear search"
+                    >
+                      Clear
                     </button>
                   </div>
                 </div>
@@ -2126,8 +2174,7 @@ export default function App() {
                                     <span className="text-gray-400">{group.companyName}</span>
                                   </td>
                                   <td className="px-4 py-3 max-w-[180px] overflow-hidden" style={{display: 'table-cell'}}>
-                                    <span style={{
-                                      display: 'inline-block',
+                                    <span title={app.role} aria-label={app.role} style={{
                                       maxWidth: '180px',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
@@ -2139,14 +2186,25 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
                                   <td className="px-4 py-3 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                      ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
-                                        app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
-                                        app.status === 'Offer' ? 'bg-green-100 text-green-800' : 
-                                        app.status === 'Rejected' ? 'bg-red-100 text-red-800' : 
-                                        'bg-gray-100 text-gray-800'}`}>
-                                      {app.status}
-                                    </span>
+                                    <div className="relative inline-block">
+                                      <select
+                                        value={app.status}
+                                        onChange={(e) => handleInlineStatusChange(app.id, e.target.value)}
+                                        disabled={!!inlineStatusSaving[app.id]}
+                                        className="px-2 py-1 text-xs leading-5 font-semibold rounded-full border bg-white"
+                                        aria-label={`Change status for ${app.role}`}
+                                      >
+                                        {statusOptions.map(s => (
+                                          <option key={s} value={s}>{s}</option>
+                                        ))}
+                                      </select>
+                                      {inlineStatusSaving[app.id] && (
+                                        <svg className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="px-6 py-3">
                                     <div className="grid grid-cols-2 gap-1 max-w-[280px]">
@@ -2209,10 +2267,44 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination controls below the table (using UI Button variants) */}
+                <div className="mt-6 pt-4 flex items-center justify-end space-x-2 pr-4">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Prev
+                  </button>
+                  <span className="text-sm text-gray-700 px-2">Page {currentPage} / {totalPages}</span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Next
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                  >
+                    Last
+                  </button>
+                </div>
+
               </div>
             </motion.div>
           )}
-          
+
           {/* Add/Edit Application Form Modal */}
           {showAddForm && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -2264,13 +2356,13 @@ export default function App() {
                           }}
                           onFocus={() => setCompanyDropdownOpen(true)}
                           placeholder="Type to search or add a company"
-                          readOnly={Boolean(viewingId)}
+                          readOnly={formDisabled}
                           className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
                       </div>
 
-                      {companyDropdownOpen && !viewingId && (
+                      {companyDropdownOpen && !formDisabled && (
                         <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
                           <button
                             type="button"
@@ -2321,7 +2413,7 @@ export default function App() {
                           value={newApplication.newCompany}
                           onChange={handleInputChange}
                           ref={newCompanyRef}
-                          readOnly={Boolean(viewingId)}
+                          readOnly={formDisabled}
                           className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
                           aria-required="true"
                         />
@@ -2337,7 +2429,7 @@ export default function App() {
                         placeholder="e.g., Frontend Engineer *"
                         value={newApplication.role}
                         onChange={handleInputChange}
-                        readOnly={Boolean(viewingId)}
+                        readOnly={formDisabled}
                         className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -2352,7 +2444,7 @@ export default function App() {
                         max={todayISO}
                         value={newApplication.dateApplied}
                         onChange={handleInputChange}
-                        disabled={Boolean(viewingId)}
+                        disabled={formDisabled}
                         className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
                         aria-required="true"
                       />
@@ -2365,7 +2457,7 @@ export default function App() {
                         name="status"
                         value={newApplication.status}
                         onChange={handleInputChange}
-                        disabled={Boolean(viewingId)}
+                        disabled={formDisabled}
                         className="w-full border rounded-md px-3 py-2"
                         required
                       >
@@ -2382,7 +2474,7 @@ export default function App() {
                         placeholder="e.g., applied via LinkedIn"
                         value={newApplication.notes}
                         onChange={handleInputChange}
-                        readOnly={Boolean(viewingId)}
+                        readOnly={formDisabled}
                         className="w-full border rounded-md px-3 py-2 h-24"
                       />
                     </div>
@@ -2428,7 +2520,7 @@ export default function App() {
                                     </span>
                                   )}
                                 </div>
-                                {!viewingId && (
+                                {!formDisabled && (
                                   <button 
                                     type="button"
                                     onClick={() => removeFile(file)}
@@ -2444,7 +2536,7 @@ export default function App() {
                         )}
 
                         {/* Show files marked for deletion */}
-                        {filesToDelete.length > 0 && !viewingId && (
+                        {filesToDelete.length > 0 && !formDisabled && (
                           <div className="border border-red-200 bg-red-50 rounded-md divide-y divide-red-200">
                             <div className="px-2 py-1 text-xs font-medium text-red-600">
                               Files to be deleted on save:
@@ -2462,6 +2554,7 @@ export default function App() {
                                   onClick={() => restoreFile(file)}
                                   className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs"
                                   title="Restore file"
+                                  disabled={formDisabled}
                                 >
                                   Undo
                                 </button>
@@ -2470,7 +2563,7 @@ export default function App() {
                           </div>
                         )}
 
-                        {!viewingId && (
+                        {!formDisabled && (
                           <>
                             <input
                               type="file"
@@ -2533,6 +2626,7 @@ export default function App() {
                           setFilesToDelete([]); // Clear files marked for deletion
                         }}
                         className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        disabled={isSaving}
                       >
                         Cancel
                       </button>
@@ -2547,6 +2641,7 @@ export default function App() {
                             setConfirmOpen(true);
                           }}
                           className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                          disabled={isSaving}
                         >
                           Delete
                         </button>
