@@ -1208,6 +1208,35 @@ export default function App() {
   // Handle delete application (open confirmation)
   // Track where the delete popup was invoked from
   const [deleteSourceTab, setDeleteSourceTab] = useState(null);
+
+  // Inline status change for application rows (applications page)
+  const handleInlineStatusChange = async (appId: number, newStatus: string) => {
+    // avoid concurrent updates
+    setInlineStatusSaving(prev => ({ ...prev, [appId]: true }));
+    try {
+      const resp = await fetch(`/api/jobs/${appId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!resp.ok) throw new Error('Failed to update status');
+      const updated = await resp.json();
+
+      setApplications(prev => prev.map(a => a.id === appId ? {
+        ...a,
+        status: updated.status || newStatus,
+        // prefer server status_notes when provided, otherwise append a local history line
+        statusNotes: updated.status_notes || (a.statusNotes || '')
+      } : a));
+
+      toast.success('Status updated');
+    } catch (err) {
+      toast.error('Failed to update status');
+    } finally {
+      setInlineStatusSaving(prev => ({ ...prev, [appId]: false }));
+    }
+  };
+  const [inlineStatusSaving, setInlineStatusSaving] = useState<Record<number, boolean>>({});
   const handleDelete = (id) => {
     const app = applications.find(a => a.id === id);
     if (!app) return;
@@ -1833,7 +1862,7 @@ export default function App() {
               
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold">Recent Applications</h2>
+                  <h2 className="text-xl font-semibold">Recent Applications (Top 10)</h2>
                   <button 
                     onClick={openApplicationsNoFilters}
                     className="text-blue-600 hover:text-blue-800 cursor-pointer"
@@ -1860,14 +1889,25 @@ export default function App() {
                           <td className="px-6 py-4">{app.role}</td>
                           <td className="px-6 py-4">{formatDisplayDate(app.dateApplied)}</td>
                           <td className="px-6 py-4">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                              ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
-                                app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
-                                app.status === 'Offer' ? 'bg-green-100 text-green-800' : 
-                                app.status === 'Rejected' ? 'bg-red-100 text-red-800' : 
-                                'bg-gray-100 text-gray-800'}`}>
-                              {app.status}
-                            </span>
+                            <div className="relative inline-block">
+                              <select
+                                value={app.status}
+                                onChange={(e) => handleInlineStatusChange(app.id, e.target.value)}
+                                disabled={!!inlineStatusSaving[app.id]}
+                                className="px-2 py-1 text-xs leading-5 font-semibold rounded-full border bg-white"
+                                aria-label={`Change status for ${app.role}`}
+                              >
+                                {statusOptions.map(s => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                              {inlineStatusSaving[app.id] && (
+                                <svg className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end space-x-2">
@@ -2148,14 +2188,25 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-3 whitespace-nowrap">{formatDisplayDate(app.dateApplied)}</td>
                                   <td className="px-4 py-3 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                      ${app.status === 'Applied' ? 'bg-yellow-100 text-yellow-800' : 
-                                        app.status === 'Interview' ? 'bg-blue-100 text-blue-800' : 
-                                        app.status === 'Offer' ? 'bg-green-100 text-green-800' : 
-                                        app.status === 'Rejected' ? 'bg-red-100 text-red-800' : 
-                                        'bg-gray-100 text-gray-800'}`}>
-                                      {app.status}
-                                    </span>
+                                    <div className="relative inline-block">
+                                      <select
+                                        value={app.status}
+                                        onChange={(e) => handleInlineStatusChange(app.id, e.target.value)}
+                                        disabled={!!inlineStatusSaving[app.id]}
+                                        className="px-2 py-1 text-xs leading-5 font-semibold rounded-full border bg-white"
+                                        aria-label={`Change status for ${app.role}`}
+                                      >
+                                        {statusOptions.map(s => (
+                                          <option key={s} value={s}>{s}</option>
+                                        ))}
+                                      </select>
+                                      {inlineStatusSaving[app.id] && (
+                                        <svg className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="px-6 py-3">
                                     <div className="grid grid-cols-2 gap-1 max-w-[280px]">
