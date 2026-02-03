@@ -2023,10 +2023,10 @@ export default function App() {
                     >
                       Expand All
                     </button>
-                    <span className="text-gray-300">|</span>
+                    <span className="text-gray-300 mx-3">|</span>
                     <button 
                       onClick={collapseAllCompanies}
-                      className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
+                      className="ml-3 text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
                     >
                       Collapse All
                     </button>
@@ -2269,36 +2269,56 @@ export default function App() {
                 </div>
 
                 {/* Pagination controls below the table (using UI Button variants) */}
-                <div className="mt-6 pt-4 flex items-center justify-end space-x-2 pr-4">
-                  <button
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
-                  >
-                    First
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
-                  >
-                    Prev
-                  </button>
-                  <span className="text-sm text-gray-700 px-2">Page {currentPage} / {totalPages}</span>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
-                  >
-                    Next
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
-                  >
-                    Last
-                  </button>
+                <div className="mt-6 pt-4 flex items-center justify-between pr-4">
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={expandAllCompanies}
+                      className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer mr-3"
+                    >
+                      Expand All
+                    </button>
+                    <span className="text-gray-300 px-2">|</span>
+                    <button
+                      type="button"
+                      onClick={collapseAllCompanies}
+                      className="ml-3 text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
+                    >
+                      Collapse All
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-2">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      First
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Prev
+                    </button>
+                    <span className="text-sm text-gray-700 px-2">Page {currentPage} / {totalPages}</span>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Next
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                    >
+                      Last
+                    </button>
+                  </div>
                 </div>
 
               </div>
