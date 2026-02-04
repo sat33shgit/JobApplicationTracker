@@ -3,7 +3,6 @@ import SimpleModal from './components/SimpleModal';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
-// ...existing code...
 import { motion } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
@@ -30,6 +29,9 @@ const formatDisplayDate = (isoDate: string) => {
 // Initial empty arrays for company and application data
 const initialCompanies: Array<{ id: number; name: string }> = [];
 const initialApplications: Array<any> = [];
+
+// Maximum allowed file size for each upload (5 MB)
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 // Status options
 const statusOptions = [
@@ -491,7 +493,6 @@ export default function App() {
       try {
         const resp = await fetch('/api/jobs');
         if (!resp.ok) {
-          // ...existing code...
           return;
         }
         const rows = await resp.json();
@@ -532,7 +533,7 @@ export default function App() {
           setApplications(apps);
         }
       } catch (err) {
-        // ...existing code...
+        // ignore load errors
       }
     }
 
@@ -593,7 +594,7 @@ export default function App() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
 
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
     return () => clearTimeout(id);
   }, [searchTerm]);
   // Focus the new company input when user selects "Add new company"
@@ -848,14 +849,25 @@ export default function App() {
     const files = Array.from(filesLike || []) as File[];
     if (files.length === 0) return;
 
-    const newFiles = files.map((file: File) => ({
-      file,
-      name: file.name,
-      type: 'document',
-      url: null
-    }));
+    const allowed: any[] = [];
+    const rejected: string[] = [];
 
-    setNewApplication(prev => ({ ...prev, files: [...prev.files, ...newFiles] }));
+    for (const file of files) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        rejected.push(file.name);
+        continue;
+      }
+      allowed.push({ file, name: file.name, type: 'document', url: null });
+    }
+
+    if (rejected.length) {
+      const names = rejected.length > 3 ? `${rejected.slice(0,3).join(', ')} and ${rejected.length-3} more` : rejected.join(', ');
+      toast.error(`File(s) too large (max 5MB): ${names}`);
+    }
+
+    if (allowed.length) {
+      setNewApplication(prev => ({ ...prev, files: [...prev.files, ...allowed] }));
+    }
   };
 
   // Handle file upload from input change events
@@ -941,6 +953,10 @@ export default function App() {
         body: JSON.stringify({ filename: fileObj.name, contentType: fileObj.file.type })
       });
       if (!createResp.ok) {
+        if (createResp.status === 413) {
+          toast.error('One or more files are too large (max 5MB). Please attach smaller files.');
+          throw new Error('FILE_TOO_LARGE');
+        }
         throw new Error('failed to create upload URL');
       }
       const createBody = await createResp.json();
@@ -960,6 +976,10 @@ export default function App() {
           body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type })
         });
         if (!metaResp.ok) {
+          if (metaResp.status === 413) {
+            toast.error('One or more files are too large (max 5MB). Please attach smaller files.');
+            throw new Error('FILE_TOO_LARGE');
+          }
           const txt = await metaResp.text().catch(() => '<no body>');
           throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
         }
@@ -985,6 +1005,10 @@ export default function App() {
             body: JSON.stringify({ jobId, filename: fileObj.name, contentBase64: b64, contentType: fileObj.file.type, uploadUrl })
           });
           if (!metaResp.ok) {
+            if (metaResp.status === 413) {
+              toast.error('One or more files are too large (max 5MB). Please attach smaller files.');
+              throw new Error('FILE_TOO_LARGE');
+            }
             const txt = await metaResp.text().catch(() => '<no body>');
             // Surface server-side upload failure instead of falling back to a browser PUT
             throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
@@ -1006,6 +1030,11 @@ export default function App() {
         body: fileObj.file
       });
       if (!putRes.ok) {
+        if (putRes.status === 413) {
+          toast.error('One or more files are too large (max 5MB). Please attach smaller files.');
+          const text = await putRes.text().catch(()=>'<no body>');
+          throw new Error(`FILE_TOO_LARGE: ${putRes.status} ${text}`);
+        }
         const text = await putRes.text().catch(()=>'<no body>');
         throw new Error(`upload failed during PUT: ${putRes.status} ${text}`);
       }
@@ -1016,7 +1045,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId, filename: fileObj.name, url: publicUrl || uploadUrl, storageKey, size: fileObj.file.size, contentType: fileObj.file.type })
       });
-      if (!metaResp.ok) throw new Error('failed to persist attachment metadata');
+      if (!metaResp.ok) {
+        if (metaResp.status === 413) {
+          toast.error('One or more files are too large (max 5MB). Please attach smaller files.');
+          throw new Error('FILE_TOO_LARGE');
+        }
+        throw new Error('failed to persist attachment metadata');
+      }
       return await metaResp.json();
     };
 
@@ -1033,41 +1068,36 @@ export default function App() {
         // After updating job, upload any new files and attach them
         const filesToUpload = Array.isArray(newApplication.files) ? newApplication.files.filter(f => f && f.file) : [];
         let attachments = [];
-        // ...existing code...
         if (filesToUpload.length) {
           try {
             attachments = await Promise.all(filesToUpload.map(async (f) => {
               try {
                 const res = await uploadFileToServer(updated.id, f);
-                // ...existing code...
                 return res;
               } catch (uerr) {
-                // ...existing code...
                 throw uerr;
               }
             }));
             } catch (e) {
-            // ...existing code...
-            // upload error handled silently; show user-facing toast
-            toast.error('One or more attachments failed to upload.');
-            // Continue — do not abort the whole submit; user can retry attachments
-          }
+              // upload error handled silently; show user-facing toast
+              toast.error('One or more attachments failed to upload.');
+              // Continue — do not abort the whole submit; user can retry attachments
+            }
 
           if (attachments && attachments.length) {
             const attachMeta = attachments.map(a => ({ name: a.filename || a.name, url: a.url || a.url, id: a.id }));
             const existingFiles = (updated.metadata && Array.isArray(updated.metadata.files)) ? updated.metadata.files : [];
             const mergedFiles = [...existingFiles, ...attachMeta];
             // patch job metadata to include merged attachments
-            try {
-              const metaResp = await fetch(`/api/jobs/${updated.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
-              });
-              // ...existing code...
-            } catch (pmErr) {
-              // ...existing code...
-            }
+              try {
+                const metaResp = await fetch(`/api/jobs/${updated.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ metadata: { ...(updated.metadata || {}), files: mergedFiles } })
+                });
+              } catch (pmErr) {
+                // ignore metadata patch errors
+              }
             updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
           }
         }
@@ -1153,8 +1183,16 @@ export default function App() {
       setIsSaving(false);
     } catch (err) {
       setIsSaving(false);
-      // ...existing code...
-      toast.error('Failed to save application. See console for details.');
+      // If we detected a file-too-large error earlier, show a clear message
+      try {
+        if (err && err.message && String(err.message).includes('FILE_TOO_LARGE')) {
+          toast.error('One or more attachments are too large (max 5MB). Please attach smaller files.');
+        } else {
+          toast.error('Failed to save application.');
+        }
+      } catch (e) {
+        toast.error('Failed to save application. See console for details.');
+      }
     }
   };
 
@@ -1270,8 +1308,7 @@ export default function App() {
       }
       setDeleteSourceTab(null);
     } catch (err) {
-      // ...existing code...
-      toast.error('Failed to delete application. See console for details.');
+      toast.error('Failed to delete application.');
     }
   };
 
@@ -1488,8 +1525,7 @@ export default function App() {
       toast.success(`Import finished. Created: ${createdCount}, Failed: ${failedCount}`);
       setShowImportModal(false);
     } catch (err) {
-      // ...existing code...
-      toast.error('Import failed. See console for details.');
+      toast.error('Import failed.');
     } finally {
       setIsImporting(false);
     }
@@ -1995,12 +2031,12 @@ export default function App() {
                 {/* Search row aligned with table left margin */}
                 <div className="mb-6 px-6">
                   <div className="flex items-center space-x-2" >
-                    <div className="relative flex-1 min-w-0">
+                    <div className="relative w-full md:w-3/4 min-w-0">
                       <input
                         type="text"
                         placeholder="Search applications..."
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value.trim())}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10 pr-4 py-2 border rounded-md w-full"
                       />
                       <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -2504,7 +2540,7 @@ export default function App() {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Status History</label>
                         <textarea
                           name="statusNotes"
-                          value={newApplication.statusNotes || ''}
+                          value={(newApplication.statusNotes || '').replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
                           readOnly
                           rows={6}
                           wrap="soft"
