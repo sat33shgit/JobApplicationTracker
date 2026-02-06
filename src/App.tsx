@@ -251,7 +251,6 @@ export default function App() {
   const [filterEndDate, setFilterEndDate] = useState("");
   const [dateRangeError, setDateRangeError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [lastNDays, setLastNDays] = useState<number | null>(null);
   
   // Get max allowed range based on timeframe
   const getMaxRangeDays = (timeframe: string) => {
@@ -303,7 +302,6 @@ export default function App() {
     if (type === 'start') setFilterStartDate(value);
     else setFilterEndDate(value);
     // Manual edits clear any quick last-N-days selection
-    setLastNDays(null);
     
     const validation = validateDateRange(newStart, newEnd, selectedTimeframe);
     setDateRangeError(validation.error);
@@ -376,11 +374,20 @@ export default function App() {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - (n - 1));
     const start = normalizeDateToInput(startDate);
-    setLastNDays(n);
     setFilterStartDate(start);
     setFilterEndDate(end);
     setDateRangeError('');
     setSelectedTimeframe('daily');
+  };
+
+  // Handler for quick-range buttons (Last N days)
+  const handleQuickRange = (n: number) => {
+    const max = getMaxRangeDays('daily');
+    if (n > max) {
+      setDateRangeError(`Max range for daily view is ${max} days`);
+      return;
+    }
+    applyLastNDays(n);
   };
   
   // Clear date range filter
@@ -388,7 +395,6 @@ export default function App() {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
-    setLastNDays(null);
     setSelectedStatus('');
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1693,6 +1699,7 @@ export default function App() {
               transition={{ duration: 0.3 }}
               className="space-y-6"
             >
+              
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex flex-col space-y-4 mb-6">
                   <div className="flex justify-between items-center">
@@ -1798,8 +1805,9 @@ export default function App() {
                         )}
                       </div>
 
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                       <div className="flex items-center gap-2">
-                        <label className="text-sm text-gray-700">Status:</label>
+                        <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Status:</label>
                         <select
                           value={selectedStatus}
                           onChange={(e) => setSelectedStatus(e.target.value)}
@@ -1815,34 +1823,47 @@ export default function App() {
                       <button
                         onClick={clearDateRange}
                         disabled={!(filterStartDate || filterEndDate || selectedStatus)}
-                        className={`flex items-center gap-1 px-3 py-2 text-sm rounded-md border transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
+                        className={`flex items-center gap-1 px-3 py-2 text-sm rounded-md border transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2' : 'px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2'}`}
                       >
                         <X className="h-4 w-4" />
                         <span>Clear</span>
                       </button>
+                      </div>
                     </div>
 
                     {/* Second row: Quick range buttons (Daily only) */}
                     {selectedTimeframe === 'daily' && (
                       <>
-                        <div className="w-full border-t border-gray-200" />
-                        <div className="flex items-center justify-between pt-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-blue-600">Quick range:</span>
-                          <div className="flex items-center gap-2">
-                            {[10, 20, 30].map(n => (
-                              <button
-                                key={n}
-                                onClick={() => applyLastNDays(n)}
-                                className={`px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer ${lastNDays === n ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                              >
-                                Last {n} days
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <span className="text-sm text-gray-500">Max: 30 days</span>
-                      </div>
+                        {/* Quick Range and Max Info */}
+        <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          {/* Quick Range Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Quick range:</span>
+            <button
+              onClick={() => handleQuickRange(10)}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+            >
+              Last 10 days
+            </button>
+            <button
+              onClick={() => handleQuickRange(20)}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+            >
+              Last 20 days
+            </button>
+            <button
+              onClick={() => handleQuickRange(30)}
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+            >
+              Last 30 days
+            </button>
+          </div>
+
+          {/* Max Info */}
+          <div className="text-sm text-gray-500">
+            <span className="font-medium">Max:</span> 30 days
+          </div>
+        </div>
                       </>
                     )}
 
