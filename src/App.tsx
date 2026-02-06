@@ -251,6 +251,7 @@ export default function App() {
   const [filterEndDate, setFilterEndDate] = useState("");
   const [dateRangeError, setDateRangeError] = useState("");
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [lastNDays, setLastNDays] = useState<number | null>(null);
   
   // Get max allowed range based on timeframe
   const getMaxRangeDays = (timeframe: string) => {
@@ -301,6 +302,8 @@ export default function App() {
     
     if (type === 'start') setFilterStartDate(value);
     else setFilterEndDate(value);
+    // Manual edits clear any quick last-N-days selection
+    setLastNDays(null);
     
     const validation = validateDateRange(newStart, newEnd, selectedTimeframe);
     setDateRangeError(validation.error);
@@ -366,12 +369,26 @@ export default function App() {
     const parts = dateStr.split('-');
     return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : '';
   };
+
+  // Quick-select last N days (applies to dashboard)
+  const applyLastNDays = (n: number) => {
+    const end = getTodayISO();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (n - 1));
+    const start = normalizeDateToInput(startDate);
+    setLastNDays(n);
+    setFilterStartDate(start);
+    setFilterEndDate(end);
+    setDateRangeError('');
+    setSelectedTimeframe('daily');
+  };
   
   // Clear date range filter
   const clearDateRange = useCallback(() => {
     setFilterStartDate('');
     setFilterEndDate('');
     setDateRangeError('');
+    setLastNDays(null);
     setSelectedStatus('');
     try {
       const params = new URLSearchParams(window.location.search);
@@ -1778,6 +1795,9 @@ export default function App() {
                         </>
                       )}
                     </div>
+
+                    
+
                     <div className="flex items-center gap-3">
                       <label className="text-sm text-gray-700 mr-2">Status:</label>
                       <select
@@ -1803,12 +1823,39 @@ export default function App() {
                         Max: {selectedTimeframe === 'daily' ? '30 days' : selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
                       </span>
                     </div>
+
+                    {/* Quick range radio buttons inside the date-range card, bottom row (Daily only) */}
+                    {selectedTimeframe === 'daily' && (
+                      <div className="w-full mt-3 px-2 basis-full">
+                        <div className="flex items-center gap-4">
+                          <div className="text-sm text-gray-700 mr-2">Quick range:</div>
+                          <div className="flex items-center gap-3">
+                            {[10, 20, 30].map(n => (
+                              <label key={n} className="inline-flex items-center text-sm">
+                                <input
+                                  type="radio"
+                                  name="lastNDays"
+                                  value={String(n)}
+                                  checked={lastNDays === n}
+                                  onChange={() => applyLastNDays(n)}
+                                  className="h-4 w-4 text-blue-600"
+                                />
+                                <span className="ml-2">Last {n} days</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {dateRangeError && (
                       <span className="w-full text-sm text-red-600 font-medium bg-red-50 px-3 py-1.5 rounded-md">{dateRangeError}</span>
                     )}
                   </div>
                 </div>
+
                 
+
                 <div className="flex flex-col md:flex-row gap-6 mb-6">
                   <div className="bg-blue-50 rounded-lg p-4 w-full md:w-1/2">
                     <h3 className="text-lg font-medium mb-2">
@@ -2179,7 +2226,7 @@ export default function App() {
                               <td className="px-6 py-3 font-medium whitespace-normal break-words">
                                 <span className="inline-flex items-center">
                                   {group.companyName}
-                                  <span className="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                  <span className="ml-2 text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                                     {group.applications.length} role{group.applications.length !== 1 ? 's' : ''}
                                   </span>
                                 </span>
