@@ -1720,136 +1720,143 @@ export default function App() {
                   </div>
                   
                   {/* Date Range Filter */}
-                  <div className="flex flex-wrap items-center gap-6 px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-gray-500" />
-                      <span className="text-sm font-medium text-gray-700">Date Range:</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {selectedTimeframe === 'yearly' ? (
-                        // Year dropdowns for yearly view
-                        <>
-                          <select
-                            value={getYearFromDate(filterStartDate)}
-                            onChange={(e) => handleYearChange('start', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
-                          >
-                            <option value="">From Year</option>
-                            {yearOptionsDesc.map(year => (
+                  <div className="flex flex-col gap-4 px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
+                    {/* First row: Date inputs, Status, Clear */}
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-blue-500" />
+                        <span className="text-sm font-medium text-gray-700">Date Range:</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        {selectedTimeframe === 'yearly' ? (
+                          // Year dropdowns for yearly view
+                          <>
+                            <select
+                              value={getYearFromDate(filterStartDate)}
+                              onChange={(e) => handleYearChange('start', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
+                            >
+                              <option value="">From Year</option>
+                              {yearOptionsDesc.map(year => (
+                                  <option key={year} value={year}>{year}</option>
+                                ))}
+                            </select>
+                            <span className="text-gray-500 font-medium px-1">to</span>
+                            <select
+                              value={getYearFromDate(filterEndDate)}
+                              onChange={(e) => handleYearChange('end', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
+                            >
+                              <option value="">To Year</option>
+                              {yearOptionsDesc.map(year => (
                                 <option key={year} value={year}>{year}</option>
                               ))}
-                          </select>
-                          <span className="text-gray-500 font-medium px-1">to</span>
-                          <select
-                            value={getYearFromDate(filterEndDate)}
-                            onChange={(e) => handleYearChange('end', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[110px]"
-                          >
-                            <option value="">To Year</option>
-                            {yearOptionsDesc.map(year => (
-                              <option key={year} value={year}>{year}</option>
-                            ))}
-                          </select>
-                        </>
-                      ) : selectedTimeframe === 'monthly' ? (
-                        // Month-Year dropdowns for monthly view
-                        <>
-                          <select
-                            value={getMonthYearFromDate(filterStartDate)}
-                            onChange={(e) => handleMonthYearChange('start', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
-                          >
-                            <option value="">From Month</option>
-                            {monthYearOptions.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                          <span className="text-gray-500 font-medium px-1">to</span>
-                          <select
-                            value={getMonthYearFromDate(filterEndDate)}
-                            onChange={(e) => handleMonthYearChange('end', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
-                          >
-                            <option value="">To Month</option>
-                            {monthYearOptions.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </>
-                      ) : (
-                        // Date inputs for daily view
-                        <>
-                          <input
-                            type="date"
-                            value={filterStartDate}
-                            onChange={(e) => handleDateRangeChange('start', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          <span className="text-gray-500 font-medium px-1">to</span>
-                          <input
-                            type="date"
-                            value={filterEndDate}
-                            onChange={(e) => handleDateRangeChange('end', e.target.value)}
-                            className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </>
-                      )}
-                    </div>
+                            </select>
+                          </>
+                        ) : selectedTimeframe === 'monthly' ? (
+                          // Month-Year dropdowns for monthly view
+                          <>
+                            <select
+                              value={getMonthYearFromDate(filterStartDate)}
+                              onChange={(e) => handleMonthYearChange('start', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
+                            >
+                              <option value="">From Month</option>
+                              {monthYearOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                            <span className="text-gray-500 font-medium px-1">to</span>
+                            <select
+                              value={getMonthYearFromDate(filterEndDate)}
+                              onChange={(e) => handleMonthYearChange('end', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
+                            >
+                              <option value="">To Month</option>
+                              {monthYearOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </>
+                        ) : (
+                          // Date inputs for daily view - wider inputs
+                          <>
+                            <input
+                              type="date"
+                              value={filterStartDate}
+                              onChange={(e) => handleDateRangeChange('start', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[180px]"
+                            />
+                            <span className="text-gray-500 font-medium px-2">to</span>
+                            <input
+                              type="date"
+                              value={filterEndDate}
+                              onChange={(e) => handleDateRangeChange('end', e.target.value)}
+                              className="border border-gray-300 rounded-md px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[180px]"
+                            />
+                          </>
+                        )}
+                      </div>
 
-                    
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-gray-700">Status:</label>
+                        <select
+                          value={selectedStatus}
+                          onChange={(e) => setSelectedStatus(e.target.value)}
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[130px]"
+                        >
+                          <option value="">All Statuses</option>
+                          {statusOptions.map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                    <div className="flex items-center gap-3">
-                      <label className="text-sm text-gray-700 mr-2">Status:</label>
-                      <select
-                        value={selectedStatus}
-                        onChange={(e) => setSelectedStatus(e.target.value)}
-                        className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
-                      >
-                        <option value="">All Statuses</option>
-                        {statusOptions.map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2 ml-auto">
                       <button
                         onClick={clearDateRange}
                         disabled={!(filterStartDate || filterEndDate || selectedStatus)}
-                        className={`px-4 py-2 text-sm rounded-md transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'bg-gray-100 text-gray-400 cursor-not-allowed border' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'}`}
+                        className={`flex items-center gap-1 px-3 py-2 text-sm rounded-md border transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 cursor-pointer'}`}
                       >
-                        Clear
+                        <X className="h-4 w-4" />
+                        <span>Clear</span>
                       </button>
-                      <span className="text-sm text-gray-600 bg-gray-200 px-3 py-1.5 rounded-md font-medium whitespace-nowrap">
-                        Max: {selectedTimeframe === 'daily' ? '30 days' : selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
-                      </span>
                     </div>
 
-                    {/* Quick range radio buttons inside the date-range card, bottom row (Daily only) */}
+                    {/* Second row: Quick range buttons (Daily only) */}
                     {selectedTimeframe === 'daily' && (
-                      <div className="w-full mt-3 px-2 basis-full">
-                        <div className="flex items-center gap-4">
-                          <div className="text-sm text-gray-700 mr-2">Quick range:</div>
-                          <div className="flex items-center gap-3">
+                      <>
+                        <div className="w-full border-t border-gray-200" />
+                        <div className="flex items-center justify-between pt-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-blue-600">Quick range:</span>
+                          <div className="flex items-center gap-2">
                             {[10, 20, 30].map(n => (
-                              <label key={n} className="inline-flex items-center text-sm">
-                                <input
-                                  type="radio"
-                                  name="lastNDays"
-                                  value={String(n)}
-                                  checked={lastNDays === n}
-                                  onChange={() => applyLastNDays(n)}
-                                  className="h-4 w-4 text-blue-600"
-                                />
-                                <span className="ml-2">Last {n} days</span>
-                              </label>
+                              <button
+                                key={n}
+                                onClick={() => applyLastNDays(n)}
+                                className={`px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer ${lastNDays === n ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                              >
+                                Last {n} days
+                              </button>
                             ))}
                           </div>
                         </div>
+                        <span className="text-sm text-gray-500">Max: 30 days</span>
+                      </div>
+                      </>
+                    )}
+
+                    {/* Max range info for non-daily views */}
+                    {selectedTimeframe !== 'daily' && (
+                      <div className="flex justify-end">
+                        <span className="text-sm text-gray-500">
+                          Max: {selectedTimeframe === 'monthly' ? '12 months' : '10 years'}
+                        </span>
                       </div>
                     )}
 
                     {dateRangeError && (
-                      <span className="w-full text-sm text-red-600 font-medium bg-red-50 px-3 py-1.5 rounded-md">{dateRangeError}</span>
+                      <span className="text-sm text-red-600 font-medium bg-red-50 px-3 py-1.5 rounded-md">{dateRangeError}</span>
                     )}
                   </div>
                 </div>
