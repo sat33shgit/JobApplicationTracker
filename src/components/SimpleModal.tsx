@@ -7,9 +7,10 @@ type SimpleModalProps = {
   children: React.ReactNode;
   titleId?: string;
   descriptionId?: string;
+  blur?: boolean;
 };
 
-export default function SimpleModal({ open, onClose, children, titleId, descriptionId }: SimpleModalProps) {
+export default function SimpleModal({ open, onClose, children, titleId, descriptionId, blur }: SimpleModalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -26,7 +27,15 @@ export default function SimpleModal({ open, onClose, children, titleId, descript
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
-      <div className="absolute inset-0 bg-black bg-opacity-40" onClick={onClose} />
+      <div
+        className={blur ? 'absolute inset-0 bg-white/40 backdrop-blur-lg' : 'absolute inset-0 bg-black bg-opacity-40'}
+        style={
+          blur
+            ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }
+            : undefined
+        }
+        onClick={onClose}
+      />
       <div className="relative w-full max-w-2xl mx-auto pointer-events-auto">
         <div
           ref={containerRef}
@@ -35,7 +44,7 @@ export default function SimpleModal({ open, onClose, children, titleId, descript
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
           tabIndex={-1}
-          className="bg-white rounded-lg shadow-xl w-full p-6 max-h-[80vh] overflow-auto"
+          className="bg-white rounded-lg shadow-xl w-full p-6 max-h-[80vh] overflow-visible"
         >
           {children}
         </div>

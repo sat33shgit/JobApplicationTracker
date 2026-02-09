@@ -52,14 +52,15 @@ const statusOptions = [
 const COLORS = [
   '#0088FE', // Applied
   '#687530', // System Rejected
+  '#783330', // AI Interview
   '#F39C12', // Email Enquiry (orange/yellow for visibility)
   '#397D58', // Preliminary Call
   '#00C49F', // Interview
   '#FFBB28', // Offer
-  '#FF8042', // Rejected
+  '#F38042', // Rejected
   '#8884d8', // Withdrawn
   '#D35400', // Paused (dark orange)
-  '#A0AEC0'  // No Update (gray)
+  '#e0AEC0'  // No Update (gray)
 ];
 
 // Function to generate statistics based on date range, timeframe and optional status
@@ -215,6 +216,7 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
 export default function App() {
   // State
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [viewSourceTab, setViewSourceTab] = useState(null);
   // Render pie labels outside the pie to avoid overlap
   const renderPieLabel = (props: any) => {
     const { cx, cy, midAngle, outerRadius, percent, index } = props;
@@ -603,6 +605,7 @@ export default function App() {
     }
   }, [activeTab]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [isAddingNew, setIsAddingNew] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [newApplication, setNewApplication] = useState({
@@ -632,12 +635,22 @@ export default function App() {
   }, [newApplication.companyId]);
   const [editingId, setEditingId] = useState(null);
   const [viewingId, setViewingId] = useState(null);
-  const [editSourceTab, setEditSourceTab] = useState(null);
+  // Scroll to top when viewing a single application page
+  useEffect(() => {
+    if (activeTab === 'view' && viewingId) {
+      try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        // ignore in non-browser environments
+      }
+    }
+  }, [activeTab, viewingId]);
+  // previously used `editSourceTab`; consolidated to `viewSourceTab`
   const [filesToDelete, setFilesToDelete] = useState<Array<{ id: number; name: string }>>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const formDisabled = Boolean(viewingId) || isSaving;
+  const formDisabled = ((Boolean(viewingId) && viewingId !== editingId) || isSaving);
   const fileInputRef = useRef(null);
   const newCompanyRef = useRef<HTMLInputElement | null>(null);
   const [dragFiles, setDragFiles] = useState(false);
@@ -1189,13 +1202,9 @@ export default function App() {
           statusNotes: updated.status_notes || ''
         } : app));
         setEditingId(null);
-        // Show the correct page after modify
-        if (editSourceTab === 'applications') {
-          setActiveTab('applications');
-        } else {
-          setActiveTab('dashboard');
-        }
-        setEditSourceTab(null);
+        // Show the correct page after modify (return to the tab that opened edit)
+        setActiveTab(viewSourceTab === 'applications' ? 'applications' : 'dashboard');
+        setViewSourceTab(null);
       } else {
         // Create new job on server
         const resp = await fetch('/api/jobs', {
@@ -1240,6 +1249,12 @@ export default function App() {
           ...prev,
           [companyId]: true
         }));
+        // Return to the tab that launched Add (or Applications by default)
+        setIsAddingNew(false);
+        setViewingId(null);
+        setEditingId(null);
+        setActiveTab(viewSourceTab || 'applications');
+        setViewSourceTab(null);
       }
 
       // Reset form
@@ -1257,6 +1272,7 @@ export default function App() {
       setCompanyDropdownOpen(false);
       setFilesToDelete([]); // Clear files marked for deletion
       setShowAddForm(false);
+      setIsAddingNew(false);
       setIsSaving(false);
     } catch (err) {
       setIsSaving(false);
@@ -1293,10 +1309,13 @@ export default function App() {
     // prefill combo input
     setCompanyQuery(companyName);
     setFilesToDelete([]); // Clear any previous deletion marks
-    
+    // Open full-page view and enter edit mode there instead of opening the modal
+    setViewingId(id);
     setEditingId(id);
-    setEditSourceTab(activeTab); // Track which tab edit was started from
-    setShowAddForm(true);
+    setViewSourceTab(activeTab);
+    setFilesToDelete([]);
+    setShowAddForm(false);
+    setActiveTab('view');
   };
 
   // Handle view (read-only) application
@@ -1318,9 +1337,12 @@ export default function App() {
     });
     setCompanyQuery(companyName);
 
+    // Navigate to a full-page view rather than opening the modal
+    setViewSourceTab(activeTab);
     setViewingId(id);
     setEditingId(null);
-    setShowAddForm(true);
+    setShowAddForm(false);
+    setActiveTab('view');
   };
 
   // Handle delete application (open confirmation)
@@ -1398,8 +1420,10 @@ export default function App() {
 
   // Open Add Application dialog (reset form)
   const openAddForm = useCallback(() => {
-    setEditingId(null);
+    // open the full-page add view (preserve previous tab so Back works)
+    setViewSourceTab(null);
     setViewingId(null);
+    setEditingId(null);
     setNewApplication({
       companyId: "",
       newCompany: "",
@@ -1412,11 +1436,15 @@ export default function App() {
     });
     setCompanyQuery('');
     setCompanyDropdownOpen(false);
-    setShowAddForm(true);
+    setViewSourceTab(activeTab);
+    setIsAddingNew(true);
+    setShowAddForm(false);
+    setActiveTab('view');
   }, []);
 
   // Open Add Application form prepopulated for a specific company
   const openAddForCompany = useCallback((companyId, companyName) => {
+    // open the full-page Add view with company prefilled
     setEditingId(null);
     setViewingId(null);
     setNewApplication({
@@ -1431,7 +1459,10 @@ export default function App() {
     });
     setCompanyQuery(companyName || '');
     setCompanyDropdownOpen(false);
-    setShowAddForm(true);
+    setViewSourceTab(activeTab);
+    setIsAddingNew(true);
+    setShowAddForm(false);
+    setActiveTab('view');
   }, []);
 
   // Get company name by ID - memoized for use in export
@@ -1644,6 +1675,8 @@ export default function App() {
     }
   };
 
+  const isViewPage = activeTab === 'view' && (viewingId || isAddingNew);
+
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">
       <Toaster />
@@ -1687,36 +1720,43 @@ export default function App() {
         </div>
       </header>
       {/* Delete confirmation modal (portal) */}
-      <SimpleModal open={confirmOpen} onClose={cancelDelete} titleId="modal-title" descriptionId="modal-desc">
+      
+      <SimpleModal
+        open={confirmOpen}
+        onClose={cancelDelete}
+        titleId="modal-title"
+        descriptionId="modal-desc"
+        blur={true}
+      >
         <div className="flex justify-between items-start">
           <div>
-            <h3 id="modal-title" className="text-lg font-semibold">Delete application</h3>
-            <p id="modal-desc" className="text-sm text-gray-600">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
+            <h3 id="modal-title" className="text-lg font-semibold ">Delete application</h3>
+            <div className="border-t border-gray-200 my-4 mb-4" />
+            <p id="modal-desc" className="text-sm text-gray-600 mb-4">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
           </div>
-          <button onClick={cancelDelete} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
+        
         <div className="mt-4">
           {deleteTarget && (
             <div>
-              <p className="font-medium">{getCompanyName(deleteTarget.companyId)} — {deleteTarget.role}</p>
-              <p className="text-sm text-gray-500">Date Applied: {formatDisplayDate(deleteTarget.dateApplied)}</p>
+              <p className="font-medium mb-4">{getCompanyName(deleteTarget.companyId)} — {deleteTarget.role}</p>
+              <p className="text-sm text-gray-500 mb-4">Date Applied: {formatDisplayDate(deleteTarget.dateApplied)}</p>
             </div>
           )}
+
         </div>
-        <div className="mt-6 flex justify-end items-center gap-3">
+        <div className="border-t border-gray-200 my-4 mb-4"/>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={cancelDelete} className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
           <button
             onClick={confirmDelete}
-            className="px-4 py-2 rounded text-white cursor-pointer"
-            style={{ backgroundColor: '#dc2626', marginRight: '12px' }}
-            aria-label="Confirm delete"
+            className="px-4 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
           >
             Delete
           </button>
-          <button className="px-4 py-2 rounded border bg-white cursor-pointer" onClick={cancelDelete}>Cancel</button>
         </div>
       </SimpleModal>
 
-      {/* Import modal */}
       {showImportModal && (
         <SimpleModal open={showImportModal} onClose={() => setShowImportModal(false)} titleId="import-title" descriptionId="import-desc">
           <div className="flex justify-between items-start">
@@ -2495,42 +2535,83 @@ export default function App() {
           )}
 
           {/* Add/Edit Application Form Modal */}
-          {showAddForm && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          {(showAddForm || isViewPage) && (
+            <div className={isViewPage ? 'p-6' : 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'}>
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col"
+                className={isViewPage ? 'bg-white rounded-lg shadow-lg max-w-3xl mx-auto w-full' : 'bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col'}
               >
-                <div className="p-6 overflow-y-auto flex-1 pb-20">
-                    <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">{viewingId ? "View Application" : (editingId ? "Edit Application" : "Add New Application")}</h2>
-                    <button 
-                      onClick={() => {
-                        setShowAddForm(false);
-                        setEditingId(null);
-                        setViewingId(null);
-                        setNewApplication({
-                          companyId: "",
-                          newCompany: "",
-                          role: "",
-                          dateApplied: getTodayISO(),
-                          status: "Applied",
-                          notes: "",
-                          files: [],
-                          contacts: []
-                        });
-                        setCompanyQuery('');
-                        setCompanyDropdownOpen(false);
-                        setFilesToDelete([]); // Clear files marked for deletion
-                      }}
-                      className="text-gray-500 hover:text-gray-700"
-                    >
-                      <X className="h-6 w-6" />
-                    </button>
-                  </div>
+                <div className={isViewPage ? 'p-6' : 'p-6 overflow-y-auto flex-1 pb-20'}>
+                    {isViewPage ? (
+                      <>
+                      <div className="mb-2">
+                        <div className="flex items-center justify-between py-2">
+                          <div>
+                            <button
+                              onClick={() => {
+                                // Go back to previous tab (dashboard or applications)
+                                setViewingId(null);
+                                setEditingId(null);
+                                setActiveTab(viewSourceTab || 'applications');
+                                setCompanyQuery('');
+                                setShowAddForm(false);
+                                setIsAddingNew(false);
+                              }}
+                              className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                            >
+                              ← Back to List
+                            </button>
+                          </div>
+
+                          <div>
+                            <button
+                              onClick={() => {
+                                // Start inline edit on the view page
+                                setEditingId(viewingId);
+                              }}
+                              className="px-4 py-2 border rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-t border-gray-200 mb-4" />
+                      <div className="text-center mb-6">
+                        <h2 className="text-xl font-semibold">{isAddingNew ? 'Add New Application' : (editingId === viewingId ? 'Edit Application' : 'View Application')}</h2>
+                      </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-semibold">{viewingId ? "View Application" : (editingId ? "Edit Application" : "Add New Application")}</h2>
+                        <button 
+                          onClick={() => {
+                            setShowAddForm(false);
+                            setEditingId(null);
+                            setViewingId(null);
+                            setNewApplication({
+                              companyId: "",
+                              newCompany: "",
+                              role: "",
+                              dateApplied: getTodayISO(),
+                              status: "Applied",
+                              notes: "",
+                              files: [],
+                              contacts: []
+                            });
+                            setCompanyQuery('');
+                            setCompanyDropdownOpen(false);
+                            setFilesToDelete([]); // Clear files marked for deletion
+                          }}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </div>
+                    )}
                   
-                  <form ref={formRef} onSubmit={viewingId ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
+                  <form ref={formRef} onSubmit={(viewingId && editingId !== viewingId) ? (e)=>e.preventDefault() : handleSubmit} className="space-y-4">
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
                       <div>
@@ -2547,7 +2628,7 @@ export default function App() {
                           onFocus={() => setCompanyDropdownOpen(true)}
                           placeholder="Type to search or add a company"
                           readOnly={formDisabled}
-                          className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''}`}
+                          className={`w-full border rounded-md px-3 py-2 ${errors.companyId ? 'border-red-500' : ''} ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                           aria-required="true"
                         />
                       </div>
@@ -2604,7 +2685,7 @@ export default function App() {
                           onChange={handleInputChange}
                           ref={newCompanyRef}
                           readOnly={formDisabled}
-                          className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''}`}
+                          className={`w-full border rounded-md px-3 py-2 ${errors.newCompany ? 'border-red-500' : ''} ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                           aria-required="true"
                         />
                         {errors.newCompany && <p className="text-red-500 text-xs mt-1">{errors.newCompany}</p>}
@@ -2620,7 +2701,7 @@ export default function App() {
                         value={newApplication.role}
                         onChange={handleInputChange}
                         readOnly={formDisabled}
-                        className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''}`}
+                        className={`w-full border rounded-md px-3 py-2 ${errors.role ? 'border-red-500' : ''} ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                         aria-required="true"
                       />
                       {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
@@ -2635,7 +2716,7 @@ export default function App() {
                         value={newApplication.dateApplied}
                         onChange={handleInputChange}
                         disabled={formDisabled}
-                        className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
+                        className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''} ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                         aria-required="true"
                       />
                       {errors.dateApplied && <p className="text-red-500 text-xs mt-1">{errors.dateApplied}</p>}
@@ -2648,7 +2729,7 @@ export default function App() {
                         value={newApplication.status}
                         onChange={handleInputChange}
                         disabled={formDisabled}
-                        className="w-full border rounded-md px-3 py-2"
+                        className={`w-full border rounded-md px-3 py-2 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                         required
                       >
                         {statusOptions.map(status => (
@@ -2665,7 +2746,7 @@ export default function App() {
                         value={newApplication.notes}
                         onChange={handleInputChange}
                         readOnly={formDisabled}
-                        className="w-full border rounded-md px-3 py-2 h-24"
+                        className={`w-full border rounded-md px-3 py-2 h-24 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                       />
                     </div>
 
@@ -2685,7 +2766,7 @@ export default function App() {
                                   value={c.name || ''}
                                   onChange={(e) => updateContactAt(idx, 'name', e.target.value)}
                                   readOnly={formDisabled}
-                                  className="w-full border rounded-md px-3 py-2"
+                                  className={`w-full border rounded-md px-3 py-2 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                                 />
                               </div>
                               <div className="col-span-4">
@@ -2695,7 +2776,7 @@ export default function App() {
                                   value={c.email || ''}
                                   onChange={(e) => updateContactAt(idx, 'email', e.target.value)}
                                   readOnly={formDisabled}
-                                  className="w-full border rounded-md px-3 py-2"
+                                  className={`w-full border rounded-md px-3 py-2 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                                 />
                               </div>
                               <div className="col-span-3">
@@ -2705,7 +2786,7 @@ export default function App() {
                                   value={c.phone || ''}
                                   onChange={(e) => updateContactAt(idx, 'phone', e.target.value)}
                                   readOnly={formDisabled}
-                                  className="w-full border rounded-md px-3 py-2"
+                                  className={`w-full border rounded-md px-3 py-2 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
                                 />
                               </div>
                               <div className="col-span-1">
@@ -2853,18 +2934,20 @@ export default function App() {
                   </form>
                 </div>
                 <div className="border-t p-4 bg-white flex justify-end gap-2">
-                  {viewingId ? (
+                  {viewingId && viewingId !== editingId ? (
                     <button
                       type="button"
                       onClick={() => {
+                        // Go back to the tab that opened the view (dashboard/applications)
                         setShowAddForm(false);
                         setViewingId(null);
+                        setActiveTab(viewSourceTab || 'applications');
                         setCompanyQuery('');
                         setCompanyDropdownOpen(false);
                       }}
                       className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                     >
-                      Close
+                      ← Back to List
                     </button>
                   ) : (
                     <>
