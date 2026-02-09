@@ -18,11 +18,67 @@ async function createJob(req, res) {
     const _d = new Date();
     const dateOnly = `${String(_d.getDate()).padStart(2,'0')}-${_d.toLocaleString('en-US',{month:'short'})}-${_d.getFullYear()}`;
     const initialNote = `${dateOnly} | ${status || 'applied'}\n${(metadata && metadata.notes) ? metadata.notes : ''}`;
+    // persist contacts in metadata by default; if the DB has a top-level `contacts` column
+    // then also persist there. Checking information_schema is inexpensive and cached.
+    let contacts = null;
+    if (Array.isArray(req.body && req.body.contacts)) contacts = req.body.contacts;
+    else if (metadata && Array.isArray(metadata.contacts)) contacts = metadata.contacts;
+    // If running against a real Postgres pool, stringify JSON params to avoid type issues
+    const usePool = !!db && !!db.pool;
+
+    // simple process-local cache to avoid repeated information_schema queries
+    if (typeof global.__has_jobs_contacts_col === 'undefined') global.__has_jobs_contacts_col = null;
+    async function hasContactsColumn() {
+      if (global.__has_jobs_contacts_col !== null) return global.__has_jobs_contacts_col;
+      try {
+        const r = await db.query("SELECT 1 FROM information_schema.columns WHERE table_name='jobs' AND column_name='contacts' LIMIT 1");
+        global.__has_jobs_contacts_col = r.rowCount === 1;
+      } catch (e) {
+        global.__has_jobs_contacts_col = false;
+      }
+      return global.__has_jobs_contacts_col;
+    }
+
+    const colExists = contacts ? await hasContactsColumn() : false;
+
+    if (contacts && colExists) {
+      const insertFields = 'title, company, status, stage, applied_date, url, location, salary, metadata, contacts, status_notes';
+      const insertValuesPlaceholders = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11';
+      const params = [
+        title,
+        company,
+        status || 'applied',
+        stage,
+        applied_date || null,
+        url || null,
+        location || null,
+        salary || null,
+        usePool ? (metadata ? JSON.stringify(metadata) : null) : (metadata || null),
+        usePool ? JSON.stringify(contacts) : contacts,
+        initialNote
+      ];
+      const result = await db.query(`INSERT INTO jobs(${insertFields}) VALUES(${insertValuesPlaceholders}) RETURNING *`, params);
+      return res.status(201).json(result.rows[0]);
+    }
+
+    // Fallback: persist contacts inside metadata only (no top-level column)
     const result = await db.query(
       `INSERT INTO jobs(title, company, status, stage, applied_date, url, location, salary, metadata, status_notes)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [title, company, status || 'applied', stage, applied_date || null, url || null, location || null, salary || null, metadata || null, initialNote]
+      [
+        title,
+        company,
+        status || 'applied',
+        stage,
+        applied_date || null,
+        url || null,
+        location || null,
+        salary || null,
+        usePool ? (metadata ? JSON.stringify(metadata) : null) : (metadata || null),
+        initialNote
+      ]
     );
+    res.status(201).json(result.rows[0]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('createJob error:', err && err.message);

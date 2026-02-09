@@ -546,6 +546,7 @@ export default function App() {
             status,
             notes: r.metadata?.notes || '',
             files: r.metadata?.files || [],
+            contacts: r.contacts || r.metadata?.contacts || [],
             statusNotes: r.status_notes || ''
           };
         });
@@ -611,7 +612,8 @@ export default function App() {
     dateApplied: getTodayISO(),
     status: "Applied",
     notes: "",
-    files: []
+    files: [],
+    contacts: []
   });
   const [sortConfig, setSortConfig] = useState({ key: 'companyId', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState("");
@@ -868,6 +870,29 @@ export default function App() {
     setErrors(prev => ({ ...prev, [name]: "" }));
   }, []);
 
+  // Contacts handlers
+  const addContact = useCallback(() => {
+    setNewApplication(prev => ({ ...prev, contacts: [...(prev.contacts || []), { name: '', email: '', phone: '' }] }));
+  }, []);
+
+  const removeContactAt = useCallback((idx) => {
+    setNewApplication(prev => ({ ...prev, contacts: (prev.contacts || []).filter((_, i) => i !== idx) }));
+  }, []);
+
+  const updateContactAt = useCallback((idx, field, value) => {
+    setNewApplication(prev => {
+      const contacts = [...(prev.contacts || [])];
+      let newVal = value;
+      if (field === 'phone') {
+        // allow digits only, strip other chars and limit to 10 digits
+        newVal = String(value || '').replace(/\D/g, '').slice(0, 10);
+      }
+      contacts[idx] = { ...contacts[idx], [field]: newVal };
+      return { ...prev, contacts };
+    });
+    setErrors(prev => ({ ...prev, contacts: '' }));
+  }, []);
+
   // Accept an array-like FileList or array of File objects and attach them
   const handleFiles = (filesLike: FileList | File[]) => {
     const files = Array.from(filesLike || []) as File[];
@@ -909,6 +934,29 @@ export default function App() {
     if (!newApplication.role.trim()) newErrors.role = "Role is required";
     if (!newApplication.dateApplied) newErrors.dateApplied = "Date is required";
     else if (newApplication.dateApplied > todayISO) newErrors.dateApplied = "Future date not allowed";
+
+    // Contacts validation: contacts are optional. For any contact where the user entered data,
+    // require name and either phone or email.
+    const rawContacts = Array.isArray(newApplication.contacts) ? newApplication.contacts : [];
+    const validContacts = [];
+    for (const c of rawContacts) {
+      const name = (c && c.name) ? String(c.name).trim() : '';
+      const email = (c && c.email) ? String(c.email).trim() : '';
+      let phone = (c && c.phone) ? String(c.phone).trim() : '';
+      // ensure phone contains only digits and is limited to 10 characters (input sanitizes but validate again)
+      if (phone) {
+        if (!/^\d{1,10}$/.test(phone)) {
+          newErrors.contacts = 'Phone must be digits only and at most 10 characters';
+          break;
+        }
+      }
+      if (!name && !email && !phone) continue; // skip empty row
+      if (!name || (!email && !phone)) {
+        newErrors.contacts = 'Each contact must include a name and at least an email or phone number';
+        break;
+      }
+      validContacts.push({ name, email: email || null, phone: phone || null });
+    }
     if (Object.keys(newErrors).length) {
       setErrors(newErrors);
       return;
@@ -939,10 +987,12 @@ export default function App() {
       company: companyMap.get(companyId) || (newApplication.newCompany || null),
       status: newApplication.status,
       applied_date: newApplication.dateApplied,
+      // persist notes/files in metadata; contacts are sent as top-level `contacts`
       metadata: {
         notes: newApplication.notes || null,
         files: existingUploadedFiles
-      }
+      },
+      contacts: validContacts.length ? validContacts : undefined
     };
 
     // Delete files that were marked for deletion
@@ -1135,6 +1185,7 @@ export default function App() {
           status: updated.status,
           notes: updated.metadata?.notes || '',
           files: updated.metadata?.files || [],
+          contacts: updated.contacts || updated.metadata?.contacts || [],
           statusNotes: updated.status_notes || ''
         } : app));
         setEditingId(null);
@@ -1178,6 +1229,7 @@ export default function App() {
           status: created.status,
           notes: created.metadata?.notes || '',
           files: created.metadata?.files || [],
+          contacts: created.contacts || created.metadata?.contacts || [],
           statusNotes: created.status_notes || ''
         };
 
@@ -1198,7 +1250,8 @@ export default function App() {
         dateApplied: getTodayISO(),
         status: "Applied",
         notes: "",
-        files: []
+        files: [],
+        contacts: []
       });
       setCompanyQuery('');
       setCompanyDropdownOpen(false);
@@ -1234,6 +1287,7 @@ export default function App() {
       status: app.status,
       notes: app.notes,
       files: app.files,
+      contacts: Array.isArray(app.contacts) ? app.contacts : (app.metadata && Array.isArray(app.metadata.contacts) ? app.metadata.contacts : []),
       statusNotes: app.statusNotes || ''
     });
     // prefill combo input
@@ -1259,6 +1313,7 @@ export default function App() {
       status: app.status,
       notes: app.notes,
       files: app.files,
+      contacts: Array.isArray(app.contacts) ? app.contacts : (app.metadata && Array.isArray(app.metadata.contacts) ? app.metadata.contacts : []),
       statusNotes: app.statusNotes || ''
     });
     setCompanyQuery(companyName);
@@ -1352,7 +1407,8 @@ export default function App() {
       dateApplied: getTodayISO(),
       status: "Applied",
       notes: "",
-      files: []
+      files: [],
+      contacts: []
     });
     setCompanyQuery('');
     setCompanyDropdownOpen(false);
@@ -1370,7 +1426,8 @@ export default function App() {
       dateApplied: getTodayISO(),
       status: 'Applied',
       notes: '',
-      files: []
+      files: [],
+      contacts: []
     });
     setCompanyQuery(companyName || '');
     setCompanyDropdownOpen(false);
@@ -2460,7 +2517,8 @@ export default function App() {
                           dateApplied: getTodayISO(),
                           status: "Applied",
                           notes: "",
-                          files: []
+                          files: [],
+                          contacts: []
                         });
                         setCompanyQuery('');
                         setCompanyDropdownOpen(false);
@@ -2610,13 +2668,75 @@ export default function App() {
                         className="w-full border rounded-md px-3 py-2 h-24"
                       />
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Contacts</label>
+                      <div className="space-y-2">
+                        {(!newApplication.contacts || newApplication.contacts.length === 0) ? (
+                          <div className="text-sm text-gray-500">No contacts added</div>
+                        ) : (
+                          newApplication.contacts.map((c, idx) => (
+                            <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                              <div className="col-span-4">
+                                <div className="text-xs text-gray-500 mb-1">Contact {idx + 1}</div>
+                                <input
+                                  type="text"
+                                  placeholder="Name"
+                                  value={c.name || ''}
+                                  onChange={(e) => updateContactAt(idx, 'name', e.target.value)}
+                                  readOnly={formDisabled}
+                                  className="w-full border rounded-md px-3 py-2"
+                                />
+                              </div>
+                              <div className="col-span-4">
+                                <input
+                                  type="email"
+                                  placeholder="Email"
+                                  value={c.email || ''}
+                                  onChange={(e) => updateContactAt(idx, 'email', e.target.value)}
+                                  readOnly={formDisabled}
+                                  className="w-full border rounded-md px-3 py-2"
+                                />
+                              </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="tel"
+                                  placeholder="Phone No"
+                                  value={c.phone || ''}
+                                  onChange={(e) => updateContactAt(idx, 'phone', e.target.value)}
+                                  readOnly={formDisabled}
+                                  className="w-full border rounded-md px-3 py-2"
+                                />
+                              </div>
+                              <div className="col-span-1">
+                                {!formDisabled && (
+                                  <button type="button" onClick={() => removeContactAt(idx)} className="text-red-500 hover:text-red-700">
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+
+                        {!formDisabled && (
+                          <div>
+                            <button type="button" onClick={addContact} className="px-3 py-1 border rounded-md text-sm">
+                              + Add contact
+                            </button>
+                          </div>
+                        )}
+
+                        {errors.contacts && <p className="text-red-500 text-xs mt-1">{errors.contacts}</p>}
+                      </div>
+                    </div>
                     
                     {(editingId || viewingId) && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Status History</label>
                         <textarea
                           name="statusNotes"
-                          value={(newApplication.statusNotes || '').replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
+                          value={String(newApplication.statusNotes || '').replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
                           readOnly
                           rows={6}
                           wrap="soft"
