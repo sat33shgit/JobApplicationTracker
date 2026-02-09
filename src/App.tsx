@@ -37,6 +37,7 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const statusOptions = [
   "Applied",
   "System Rejected",
+  "AI Interview",
   "Email Enquiry",
   "Preliminary Call",
   "Interview",
