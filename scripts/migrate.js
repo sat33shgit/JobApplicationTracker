@@ -21,9 +21,9 @@ async function run() {
   const client = new Client({ connectionString });
   try {
     await client.connect();
-    console.log('Connected to DB, running migration...');
+    console.info('Connected to DB, running migration...');
     await client.query(sql);
-    console.log('Migration applied successfully.');
+    console.info('Migration applied successfully.');
   } catch (err) {
     console.error('Migration failed:', err);
     process.exit(1);
