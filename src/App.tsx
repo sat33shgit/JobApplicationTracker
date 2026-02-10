@@ -1711,10 +1711,10 @@ export default function App() {
           <div className="ml-4">
             <button
               onClick={openAddForm}
-              className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700"
+              className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
-              <span>Add application</span>
+              <span>Add Application</span>
             </button>
           </div>
         </div>
@@ -1730,7 +1730,7 @@ export default function App() {
       >
         <div className="flex justify-between items-start">
           <div>
-            <h3 id="modal-title" className="text-lg font-semibold ">Delete application</h3>
+            <h3 id="modal-title" className="text-lg font-semibold ">Delete Application</h3>
             <div className="border-t border-gray-200 my-4 mb-4" />
             <p id="modal-desc" className="text-sm text-gray-600 mb-4">Are you sure you want to delete this application? This will remove the job record and its attached files from storage.</p>
           </div>
@@ -1750,7 +1750,7 @@ export default function App() {
           <button onClick={cancelDelete} className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
           <button
             onClick={confirmDelete}
-            className="px-4 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
           >
             Delete
           </button>
@@ -1939,19 +1939,19 @@ export default function App() {
             <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Quick range:</span>
             <button
               onClick={() => handleQuickRange(10)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
             >
               Last 10 days
             </button>
             <button
               onClick={() => handleQuickRange(20)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
             >
               Last 20 days
             </button>
             <button
               onClick={() => handleQuickRange(30)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
             >
               Last 30 days
             </button>
@@ -2245,14 +2245,14 @@ export default function App() {
                     <button
                       onClick={() => setCurrentPage(1)}
                       disabled={currentPage === 1}
-                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border cursor-pointer'}`}
                     >
                       First
                     </button>
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border cursor-pointer'}`}
                     >
                       Prev
                     </button>
@@ -2260,14 +2260,14 @@ export default function App() {
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border cursor-pointer'}`}
                     >
                       Next
                     </button>
                     <button
                       onClick={() => setCurrentPage(totalPages)}
                       disabled={currentPage === totalPages}
-                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border'}`}
+                      className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border cursor-pointer'}`}
                     >
                       Last
                     </button>
@@ -2933,78 +2933,88 @@ export default function App() {
                     
                   </form>
                 </div>
-                <div className="border-t p-4 bg-white flex justify-end gap-2">
-                  {viewingId && viewingId !== editingId ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Go back to the tab that opened the view (dashboard/applications)
-                        setShowAddForm(false);
-                        setViewingId(null);
-                        setActiveTab(viewSourceTab || 'applications');
-                        setCompanyQuery('');
-                        setCompanyDropdownOpen(false);
-                      }}
-                      className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                    >
-                      ← Back to List
-                    </button>
-                  ) : (
-                    <>
+                <div className="border-t p-4 bg-white flex justify-between items-center gap-2">
+                  <div className="flex items-center">
+                    {(viewingId && viewingId !== editingId) || editingId ? (
                       <button
                         type="button"
                         onClick={() => {
+                          // Go back to the tab that opened the view (dashboard/applications)
                           setShowAddForm(false);
+                          setViewingId(null);
                           setEditingId(null);
+                          setActiveTab(viewSourceTab || 'applications');
                           setCompanyQuery('');
                           setCompanyDropdownOpen(false);
-                          setFilesToDelete([]); // Clear files marked for deletion
                         }}
                         className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                        disabled={isSaving}
                       >
-                        Cancel
+                        ← Back to List
                       </button>
-                      {editingId && (
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    {viewingId && viewingId !== editingId ? null : (
+                      <>
                         <button
                           type="button"
                           onClick={() => {
-                            // Open confirmation dialog for delete
-                            const app = applications.find(a => a.id === editingId);
-                            if (!app) return;
-                            setDeleteTarget(app);
-                            setConfirmOpen(true);
+                            // Close the form and navigate back to the applications list (same as Back to List)
+                            setShowAddForm(false);
+                            setViewingId(null);
+                            setEditingId(null);
+                            setActiveTab(viewSourceTab || 'applications');
+                            setCompanyQuery('');
+                            setCompanyDropdownOpen(false);
+                            setFilesToDelete([]); // Clear files marked for deletion
                           }}
-                          className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                          className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
                           disabled={isSaving}
                         >
-                          Delete
+                          Cancel
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (formRef.current) {
-                            if (typeof formRef.current.requestSubmit === 'function') {
-                              formRef.current.requestSubmit();
-                            } else if (typeof formRef.current.submit === 'function') {
-                              formRef.current.submit();
-                            }
-                          }
-                        }}
-                        disabled={isSaving}
-                        className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-                      >
-                        {isSaving && (
-                          <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+                        {editingId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Open confirmation dialog for delete
+                              const app = applications.find(a => a.id === editingId);
+                              if (!app) return;
+                              setDeleteTarget(app);
+                              setConfirmOpen(true);
+                            }}
+                            className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
+                            disabled={isSaving}
+                          >
+                            Delete
+                          </button>
                         )}
-                        <span>{isSaving ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update" : "Save")}</span>
-                      </button>
-                    </>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (formRef.current) {
+                              if (typeof formRef.current.requestSubmit === 'function') {
+                                formRef.current.requestSubmit();
+                              } else if (typeof formRef.current.submit === 'function') {
+                                formRef.current.submit();
+                              }
+                            }
+                          }}
+                          disabled={isSaving}
+                          className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center space-x-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        >
+                          {isSaving && (
+                            <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          )}
+                          <span>{isSaving ? (editingId ? "Updating..." : "Saving...") : (editingId ? "Update" : "Save")}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             </div>
