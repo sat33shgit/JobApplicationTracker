@@ -18,7 +18,7 @@ module.exports = async function (req, res) {
 
     if (req.method === 'PUT' || req.method === 'PATCH') {
       const fields = req.body || {};
-      const allowed = ['title','company','status','stage','applied_date','url','location','salary','metadata'];
+      const allowed = ['title','company','status','stage','applied_date','url','location','salary','metadata','contacts'];
 
       // Always fetch existing job to compare status and notes for history tracking
       let existing = null;
@@ -28,7 +28,15 @@ module.exports = async function (req, res) {
       const sets = [];
       const values = [];
       let idx = 1;
-      for (const k of allowed) if (k in fields) { sets.push(`${k}=$${idx++}`); values.push(fields[k]); }
+      for (const k of allowed) if (k in fields) {
+        sets.push(`${k}=$${idx++}`);
+        // If updating metadata or contacts and running against a real Postgres pool, stringify them
+        if ((k === 'metadata' || k === 'contacts') && typeof db !== 'undefined' && db.pool) {
+          values.push(fields[k] ? JSON.stringify(fields[k]) : null);
+        } else {
+          values.push(fields[k]);
+        }
+      }
 
       // Check if status changed
       const prevStatus = existing ? existing.status : null;
@@ -64,7 +72,9 @@ module.exports = async function (req, res) {
       }
 
       if (sets.length === 0) return res.status(400).json({ error: 'no updatable fields provided' });
+      // Append id as the last parameter matching the final placeholder index
       values.push(id);
+
       const q = `UPDATE jobs SET ${sets.join(', ')} WHERE id=$${idx} RETURNING *`;
       const result = await db.query(q, values);
       return res.status(200).json(result.rows[0]);
