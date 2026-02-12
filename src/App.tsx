@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
+import { InterviewTimeline } from './components/InterviewTimeline';
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
 // Accepts `YYYY-MM-DD`, full ISO strings, or `Date` objects. When given full
@@ -45,6 +46,8 @@ const formatDisplayDate = (input: string | Date) => {
   const year = y;
   return `${day}-${month}-${year}`;
 };
+
+// (removed unused month-year badge helper)
 
 // Initial empty arrays for company and application data
 const initialCompanies: Array<{ id: number; name: string }> = [];
@@ -558,12 +561,14 @@ export default function App() {
 
           // Normalize applied_date to YYYY-MM-DD so daily stats match
           const dateApplied = normalizeDateToInput(r.applied_date);
+          const interviewDate = r.interview_date ? normalizeDateToInput(r.interview_date) : '';
           const dateAppliedTs = dateApplied ? new Date(dateApplied + 'T00:00:00').getTime() : 0;
           return {
             id: r.id,
             companyId,
             role: r.title || '',
             dateApplied,
+            interviewDate,
             dateAppliedTs,
             status,
             notes: r.metadata?.notes || '',
@@ -633,11 +638,15 @@ export default function App() {
     newCompany: "",
     role: "",
     dateApplied: getTodayISO(),
+    interviewDate: '',
     status: "Applied",
     notes: "",
     files: [],
     contacts: []
   });
+  // Local UI state to show native date picker when user focuses the date field
+  const [showNativeDateApplied, setShowNativeDateApplied] = useState(false);
+  const [showNativeInterviewDate, setShowNativeInterviewDate] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: 'companyId', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
@@ -962,11 +971,31 @@ export default function App() {
     e.preventDefault();
     // simple validation
     const newErrors: Record<string, string> = {};
-    if (!newApplication.companyId) newErrors.companyId = "Company is required";
+    // Resolve company selection: if user typed a company name into `companyQuery` but
+    // didn't explicitly choose it, attempt to match an existing company or treat as new.
+    let resolvedCompanyId = newApplication.companyId;
+    if ((!resolvedCompanyId || resolvedCompanyId === '') && companyQuery && companyQuery.trim()) {
+      const found = companies.find(c => c.name.toLowerCase() === companyQuery.trim().toLowerCase());
+      resolvedCompanyId = found ? String(found.id) : 'new';
+    }
+    if (!resolvedCompanyId) newErrors.companyId = "Company is required";
     if (newApplication.companyId === "new" && !newApplication.newCompany.trim()) newErrors.newCompany = "Enter company name";
     if (!newApplication.role.trim()) newErrors.role = "Role is required";
     if (!newApplication.dateApplied) newErrors.dateApplied = "Date is required";
     else if (newApplication.dateApplied > todayISO) newErrors.dateApplied = "Future date not allowed";
+
+    // Interview date must not be earlier than the submission (applied) date
+    if (newApplication.interviewDate) {
+      try {
+        const id = new Date(newApplication.interviewDate);
+        const ad = new Date(newApplication.dateApplied || '');
+        if (!isNaN(id.getTime()) && !isNaN(ad.getTime()) && id.getTime() < ad.getTime()) {
+          newErrors.interviewDate = 'Interview date cannot be earlier than submission date';
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
 
     // Contacts validation: contacts are optional. For any contact where the user entered data,
     // require name and either phone or email.
@@ -997,13 +1026,19 @@ export default function App() {
 
     setIsSaving(true);
 
-    let companyId = parseInt(newApplication.companyId);
+    // Determine numeric companyId for persistence. If resolvedCompanyId === 'new' we'll create it below.
+    let companyId = Number.isFinite ? parseInt(resolvedCompanyId) : NaN;
+    if (isNaN(companyId) && resolvedCompanyId && resolvedCompanyId !== 'new') {
+      // fallback parse
+      companyId = parseInt(resolvedCompanyId || '');
+    }
 
-    // If new company is being added
-    if (newApplication.companyId === "new" && newApplication.newCompany.trim()) {
+    // If new company is being added (either user selected 'Add new' or typed an unknown name)
+    if (resolvedCompanyId === 'new') {
+      const newCompanyName = (newApplication.newCompany && newApplication.newCompany.trim()) || companyQuery.trim();
       const newCompany = {
         id: companies.length + 1,
-        name: newApplication.newCompany.trim()
+        name: newCompanyName
       };
       setCompanies(prev => [...prev, newCompany]);
       companyId = newCompany.id;
@@ -1020,6 +1055,7 @@ export default function App() {
       company: companyMap.get(companyId) || (newApplication.newCompany || null),
       status: newApplication.status,
       applied_date: newApplication.dateApplied,
+      interview_date: newApplication.interviewDate || undefined,
       // persist notes/files in metadata; contacts are sent as top-level `contacts`
       metadata: {
         notes: newApplication.notes || null,
@@ -1214,6 +1250,7 @@ export default function App() {
           companyId,
           role: updated.title,
           dateApplied: normalizeDateToInput(updated.applied_date),
+          interviewDate: updated.interview_date ? normalizeDateToInput(updated.interview_date) : '',
           dateAppliedTs: updated.applied_date ? new Date(normalizeDateToInput(updated.applied_date) + 'T00:00:00').getTime() : (app.dateAppliedTs || 0),
           status: updated.status,
           notes: updated.metadata?.notes || '',
@@ -1254,6 +1291,7 @@ export default function App() {
           companyId,
           role: created.title,
           dateApplied: normalizeDateToInput(created.applied_date),
+          interviewDate: created.interview_date ? normalizeDateToInput(created.interview_date) : '',
           dateAppliedTs: created.applied_date ? new Date(normalizeDateToInput(created.applied_date) + 'T00:00:00').getTime() : 0,
           status: created.status,
           notes: created.metadata?.notes || '',
@@ -1288,6 +1326,7 @@ export default function App() {
         files: [],
         contacts: []
       });
+      setErrors({});
       setCompanyQuery('');
       setCompanyDropdownOpen(false);
       setFilesToDelete([]); // Clear files marked for deletion
@@ -1320,6 +1359,7 @@ export default function App() {
       newCompany: "",
       role: app.role,
       dateApplied: normalizeDateToInput(app.dateApplied),
+      interviewDate: app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ''),
       status: app.status,
       notes: app.notes,
       files: app.files,
@@ -1336,6 +1376,7 @@ export default function App() {
     setFilesToDelete([]);
     setShowAddForm(false);
     setActiveTab('view');
+    setErrors({});
   };
 
   // Handle view (read-only) application
@@ -1349,6 +1390,7 @@ export default function App() {
       newCompany: "",
       role: app.role,
       dateApplied: normalizeDateToInput(app.dateApplied),
+      interviewDate: app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ''),
       status: app.status,
       notes: app.notes,
       files: app.files,
@@ -1363,6 +1405,7 @@ export default function App() {
     setEditingId(null);
     setShowAddForm(false);
     setActiveTab('view');
+    setErrors({});
   };
 
   // Handle delete application (open confirmation)
@@ -1454,6 +1497,7 @@ export default function App() {
       files: [],
       contacts: []
     });
+    setErrors({});
     setCompanyQuery('');
     setCompanyDropdownOpen(false);
     setViewSourceTab(activeTab);
@@ -1472,6 +1516,7 @@ export default function App() {
       newCompany: '',
       role: '',
       dateApplied: getTodayISO(),
+      interviewDate: '',
       status: 'Applied',
       notes: '',
       files: [],
@@ -1483,6 +1528,7 @@ export default function App() {
     setIsAddingNew(true);
     setShowAddForm(false);
     setActiveTab('view');
+    setErrors({});
   }, []);
 
   // Get company name by ID - memoized for use in export
@@ -1717,6 +1763,12 @@ export default function App() {
             >
               Applications
             </button>
+            <button
+              onClick={() => setActiveTab("interviews")}
+              className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "interviews" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+            >
+              Interviews
+            </button>
           </nav>
           <div className="md:hidden">
             <select 
@@ -1726,6 +1778,7 @@ export default function App() {
             >
               <option value="dashboard">Dashboard</option>
               <option value="applications">Applications</option>
+              <option value="interviews">Interviews</option>
             </select>
           </div>
           <div className="ml-4">
@@ -2170,6 +2223,18 @@ export default function App() {
                   </table>
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* Interviews (static timeline) */}
+          {activeTab === "interviews" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <InterviewTimeline />
             </motion.div>
           )}
 
@@ -2729,17 +2794,62 @@ export default function App() {
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Date Applied</label>
-                      <input
-                        type="date"
-                        name="dateApplied"
-                        max={todayISO}
-                        value={newApplication.dateApplied}
-                        onChange={handleInputChange}
-                        disabled={formDisabled}
-                        className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''} ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}
-                        aria-required="true"
-                      />
+                      {formDisabled ? (
+                        <div className="w-full border rounded-md px-3 py-2 bg-gray-50 text-gray-700">{formatDisplayDate(newApplication.dateApplied)}</div>
+                      ) : (
+                        showNativeDateApplied ? (
+                          <input
+                            type="date"
+                            name="dateApplied"
+                            max={todayISO}
+                            value={newApplication.dateApplied}
+                            onChange={handleInputChange}
+                            onBlur={() => setShowNativeDateApplied(false)}
+                            autoFocus
+                            className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            name="dateApplied_display"
+                            value={newApplication.dateApplied ? formatDisplayDate(newApplication.dateApplied) : ''}
+                            placeholder="yyyy-mm-dd"
+                            onFocus={() => setShowNativeDateApplied(true)}
+                            readOnly
+                            className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? 'border-red-500' : ''}`}
+                          />
+                        )
+                      )}
                       {errors.dateApplied && <p className="text-red-500 text-xs mt-1">{errors.dateApplied}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Interview Date</label>
+                      {formDisabled ? (
+                        <div className="w-full border rounded-md px-3 py-2 bg-gray-50 text-gray-700">{newApplication.interviewDate ? formatDisplayDate(newApplication.interviewDate) : 'N/A'}</div>
+                      ) : (
+                        showNativeInterviewDate ? (
+                          <input
+                            type="date"
+                            name="interviewDate"
+                            value={newApplication.interviewDate || ''}
+                            onChange={handleInputChange}
+                            onBlur={() => setShowNativeInterviewDate(false)}
+                            autoFocus
+                            className={`w-full border rounded-md px-3 py-2`}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            name="interviewDate_display"
+                            value={newApplication.interviewDate ? formatDisplayDate(newApplication.interviewDate) : ''}
+                            placeholder="dd-mm-YYYY"
+                            onFocus={() => setShowNativeInterviewDate(true)}
+                            readOnly
+                            className={`w-full border rounded-md px-3 py-2`}
+                          />
+                        )
+                      )}
+                      {errors.interviewDate && <p className="text-red-500 text-xs mt-1">{errors.interviewDate}</p>}
                     </div>
                     
                     <div>

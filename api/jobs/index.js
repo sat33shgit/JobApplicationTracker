@@ -12,7 +12,7 @@ async function listJobs(req, res) {
 
 async function createJob(req, res) {
   try {
-    const { title, company, status, stage, applied_date, url, location, salary, metadata } = req.body;
+    const { title, company, status, stage, applied_date, interview_date, url, location, salary, metadata } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     // Build initial status_notes entry: date-only in DD-MMM-YYYY, status on same line, notes on next line
     const _d = new Date();
@@ -42,14 +42,15 @@ async function createJob(req, res) {
     const colExists = contacts ? await hasContactsColumn() : false;
 
     if (contacts && colExists) {
-      const insertFields = 'title, company, status, stage, applied_date, url, location, salary, metadata, contacts, status_notes';
-      const insertValuesPlaceholders = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11';
+      const insertFields = 'title, company, status, stage, applied_date, interview_date, url, location, salary, metadata, contacts, status_notes';
+      const insertValuesPlaceholders = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12';
       const params = [
         title,
         company,
         status || 'applied',
         stage,
         applied_date || null,
+        interview_date || null,
         url || null,
         location || null,
         salary || null,
@@ -63,14 +64,15 @@ async function createJob(req, res) {
 
     // Fallback: persist contacts inside metadata only (no top-level column)
     const result = await db.query(
-      `INSERT INTO jobs(title, company, status, stage, applied_date, url, location, salary, metadata, status_notes)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      `INSERT INTO jobs(title, company, status, stage, applied_date, interview_date, url, location, salary, metadata, status_notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [
         title,
         company,
         status || 'applied',
         stage,
         applied_date || null,
+        interview_date || null,
         url || null,
         location || null,
         salary || null,

@@ -18,7 +18,7 @@ module.exports = async function (req, res) {
 
     if (req.method === 'PUT' || req.method === 'PATCH') {
       const fields = req.body || {};
-      const allowed = ['title','company','status','stage','applied_date','url','location','salary','metadata','contacts'];
+      const allowed = ['title','company','status','stage','applied_date','interview_date','url','location','salary','metadata','contacts'];
 
       // Always fetch existing job to compare status and notes for history tracking
       let existing = null;
