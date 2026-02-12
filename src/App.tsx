@@ -10,19 +10,39 @@ import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
-// Parse YYYY-MM-DD strings as local dates to ensure list view matches the date input and DB values
-const formatDisplayDate = (isoDate: string) => {
-  let date: Date;
-  // If value is 'YYYY-MM-DD', construct local date
-  if (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
-    const [y, m, d] = isoDate.split('-').map(Number);
-    date = new Date(y, m - 1, d);
+// Accepts `YYYY-MM-DD`, full ISO strings, or `Date` objects. When given full
+// ISO datetimes from the server, interpret the date portion using UTC to avoid
+// timezone-based day shifts.
+const formatDisplayDate = (input: string | Date) => {
+  let y: number, mIndex: number, d: number;
+
+  if (input instanceof Date) {
+    y = input.getFullYear();
+    mIndex = input.getMonth();
+    d = input.getDate();
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const parts = input.split('-').map(Number);
+    y = parts[0];
+    mIndex = parts[1] - 1;
+    d = parts[2];
   } else {
-    date = new Date(isoDate);
+    const dt = new Date(input);
+    if (!isNaN(dt.getTime())) {
+      // Use UTC parts for ISO datetimes to avoid local timezone shifting the day
+      y = dt.getUTCFullYear();
+      mIndex = dt.getUTCMonth();
+      d = dt.getUTCDate();
+    } else {
+      const now = new Date();
+      y = now.getFullYear();
+      mIndex = now.getMonth();
+      d = now.getDate();
+    }
   }
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = date.toLocaleString('en-US', { month: 'short' });
-  const year = date.getFullYear();
+
+  const day = String(d).padStart(2, '0');
+  const month = new Date(y, mIndex, d).toLocaleString('en-US', { month: 'short' });
+  const year = y;
   return `${day}-${month}-${year}`;
 };
 
@@ -96,7 +116,7 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
         return ts >= dayStart && ts <= dayEnd;
       }).length;
       dailyStats.push({
-        date: formatDisplayDate(currentDate.toISOString()),
+        date: formatDisplayDate(currentDate),
         count
       });
       currentDate.setDate(currentDate.getDate() + 1);
@@ -114,7 +134,7 @@ const generateStats = (applications, startDate?: string, endDate?: string, timef
         return ts >= dayStart && ts <= dayEnd;
       }).length;
       dailyStats.push({
-        date: formatDisplayDate(date.toISOString()),
+        date: formatDisplayDate(date),
         count
       });
     }
