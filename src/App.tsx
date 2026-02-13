@@ -2234,7 +2234,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              <InterviewTimeline />
+              <InterviewTimeline applications={applications} companies={companies} />
             </motion.div>
           )}
 
