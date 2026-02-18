@@ -15,8 +15,6 @@ interface InterviewResponse {
   status: 'scheduled' | 'completed' | 'pending';
 }
 
-/* mockInterviewData removed - component starts with empty list and loads real data from /api/jobs */
-
 // Parse a YYYY-MM-DD string into a local Date (avoids timezone shifts)
 const parseLocalYMD = (s?: string) => {
   if (!s) return null;
@@ -414,22 +412,13 @@ export function InterviewTimeline({ applications: _applications, companies: _com
                         <h4 className="font-semibold text-gray-900">HR Contact</h4>
                       </div>
                       <div className="mt-1">
-                        {(() => {
-                          const primary = selectedInterview.contacts && selectedInterview.contacts.length > 0
-                            ? selectedInterview.contacts[0]
-                            : (selectedInterview.hrPerson || { name: '', email: '' });
-                          return (
-                            <>
-                              <p className="text-gray-900 font-medium">{primary?.name || 'N/A'}</p>
-                              {primary?.email && (
-                                <div className="flex items-center gap-2 mt-1">
-                                  <Mail className="w-3 h-3 text-gray-400" />
-                                  <a href={`mailto:${primary.email}`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline mr-2">{primary.email}</a>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
+                        <p className="text-gray-900 font-medium">{selectedInterview?.contacts?.[0]?.name || selectedInterview?.hrPerson?.name || 'N/A'}</p>
+                        {(selectedInterview?.contacts?.[0]?.email || selectedInterview?.hrPerson?.email) && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <Mail className="w-3 h-3 text-gray-400" />
+                            <a href={`mailto:${selectedInterview?.contacts?.[0]?.email || selectedInterview?.hrPerson?.email}`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline mr-2">{selectedInterview?.contacts?.[0]?.email || selectedInterview?.hrPerson?.email}</a>
+                          </div>
+                        )}
                       </div>
                     </div>
                     

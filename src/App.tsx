@@ -2630,42 +2630,41 @@ export default function App() {
                 <div className={isViewPage ? 'p-6' : 'p-6 overflow-y-auto flex-1 pb-20'}>
                     {isViewPage ? (
                       <>
-                      <div className="mb-2">
-                        <div className="flex items-center justify-between py-2">
-                          <div>
-                            <button
-                              onClick={() => {
-                                // Go back to previous tab (dashboard or applications)
-                                setViewingId(null);
-                                setEditingId(null);
-                                setActiveTab(viewSourceTab || 'applications');
-                                setCompanyQuery('');
-                                setShowAddForm(false);
-                                setIsAddingNew(false);
-                              }}
-                              className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                            >
-                              ← Back to List
-                            </button>
-                          </div>
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between py-2">
+                            <div>
+                              <button
+                                onClick={() => {
+                                  // Go back to previous tab (dashboard or applications)
+                                  setViewingId(null);
+                                  setEditingId(null);
+                                  setActiveTab(viewSourceTab || 'applications');
+                                  setCompanyQuery('');
+                                  setShowAddForm(false);
+                                  setIsAddingNew(false);
+                                }}
+                                className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                              >
+                                ← Back to List
+                              </button>
+                            </div>
 
-                          <div>
-                            <button
-                              onClick={() => {
-                                // Start inline edit on the view page
-                                setEditingId(viewingId);
-                              }}
-                              className="px-4 py-2 border rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                            >
-                              Edit
-                            </button>
+                            <div>
+                              {editingId !== viewingId && (
+                                <button
+                                  onClick={() => setEditingId(viewingId)}
+                                  className="px-4 py-2 border rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="border-t border-gray-200 mb-4" />
-                      <div className="text-center mb-6">
-                        <h2 className="text-xl font-semibold">{isAddingNew ? 'Add New Application' : (editingId === viewingId ? 'Edit Application' : 'View Application')}</h2>
-                      </div>
+                        <div className="border-t border-gray-200 mb-4" />
+                        <div className="text-center mb-6">
+                          <h2 className="text-xl font-semibold">{isAddingNew ? 'Add New Application' : (editingId === viewingId ? 'Edit Application' : 'View Application')}</h2>
+                        </div>
                       </>
                     ) : (
                       <div className="flex justify-between items-center mb-6">
