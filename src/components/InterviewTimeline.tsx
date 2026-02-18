@@ -47,7 +47,7 @@ const getMonthYear = (isoDate: string) => {
   return `${month} ${year}`;
 };
 
-export function InterviewTimeline({ applications, companies }: { applications?: any[]; companies?: { id: number; name: string }[] }) {
+export function InterviewTimeline({ applications: _applications, companies: _companies }: { applications?: any[]; companies?: { id: number; name: string }[] }) {
   // Ignore `applications` prop for the interviews page and always fetch tracked jobs (track === 't').
   // Start with mock data until the tracked jobs are loaded.
   // start with empty list; we'll populate from the API
@@ -145,6 +145,33 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
 
   // (removed unused grouping and related-interviews helpers during cleanup)
 
+  // Group items by year for the timeline sidebar and track collapsed state per year
+  const [collapsedYears, setCollapsedYears] = useState<Record<number, boolean>>({});
+
+  const groupsByYear = appsSorted.reduce((acc: Record<number, any[]>, item: any) => {
+    const dateSource = item.submissionDate || item.interviewDate || '';
+    const dt = dateSource ? (parseLocalYMD(dateSource) || new Date(dateSource)) : new Date(item.submissionTs || Date.now());
+    const y = dt.getFullYear();
+    if (!acc[y]) acc[y] = [];
+    acc[y].push(item);
+    return acc;
+  }, {});
+
+  const years = Object.keys(groupsByYear).map((s) => Number(s)).sort((a, b) => b - a);
+
+  // Initialize collapsed state when data changes: collapse all years except current year by default
+  useEffect(() => {
+    if (years.length === 0) return;
+    setCollapsedYears((prev) => {
+      const next = { ...prev } as Record<number, boolean>;
+      years.forEach((y) => {
+        if (!(y in next)) next[y] = y !== new Date().getFullYear();
+      });
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -156,7 +183,7 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
         <div className="flex items-center gap-2">
           <button
             onClick={() => setViewMode('timeline')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               viewMode === 'timeline'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -166,7 +193,7 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
           </button>
           <button
             onClick={() => setViewMode('list')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               viewMode === 'list'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -227,52 +254,85 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
             <h3 className="text-lg font-semibold text-gray-900 mb-4 sticky top-0 bg-white pb-2">
               Interview Timeline
             </h3>
-            <div className="space-y-2">
-              {appsSorted.map((item) => {
-                const dateSource = item.submissionDate || item.interviewDate || '';
-                const monthYear = dateSource ? getMonthYear(dateSource) : '';
+            <div className="space-y-4">
+              {years.map((yr) => {
+                const items = groupsByYear[yr] || [];
+                const collapsed = !!collapsedYears[yr];
                 return (
-                  <motion.button
-                    key={item.id}
-                    onClick={() => setSelectedInterview(item)}
-                    className={`w-full text-left p-3 pl-6 rounded-lg transition-all relative ${
-                      selectedInterview?.id === item.id
-                        ? 'bg-blue-50 border-2 border-blue-500 shadow-sm'
-                        : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
-                    }`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    {/* Centered month/year separator inside the item */}
-                    {monthYear && (
-                      <div className="flex items-center justify-center mb-2">
-                        <div className="border-t border-gray-200 flex-1 mr-2" />
-                        <div className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-white">{monthYear}</div>
-                        <div className="border-t border-gray-200 flex-1 ml-2" />
-                      </div>
-                    )}
-
-                    <div className={`absolute -left-[17px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 ${
-                      selectedInterview?.id === item.id ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
-                    }`} />
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-gray-900 text-sm truncate">{item.companyName}</h4>
-                        <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">{item.role}</p>
-                        <div className="flex items-center gap-1 mt-1">
-                                                    <span className="text-xs text-gray-500 mr-1"> Submission Date: </span>
-                          <span className="text-xs text-gray-500">{dateSource ? formatDisplayDate(dateSource) : 'N/A'}</span>
-                        </div>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                        item.status === 'completed'
-                          ? 'bg-green-100 text-green-700'
-                          : item.status === 'scheduled' || item.status.toLowerCase().includes('sched')
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}> {item.status} </span>
+                  <div key={yr} className="">
+                    <div className="flex items-center justify-between mb-2">
+                      <button
+                        onClick={() => setCollapsedYears((prev) => ({ ...prev, [yr]: !prev[yr] }))}
+                        className="cursor-pointer flex items-center gap-3 w-full text-left p-2 rounded-lg hover:bg-gray-50"
+                      >
+                        <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+                        <div className="px-3 text-base font-semibold text-gray-600 uppercase tracking-wider bg-white">{yr}</div>
+                        <div className="flex-1" />
+                        <div className="text-sm font-medium text-gray-700">{`(${items.length} item${items.length !== 1 ? 's' : ''})`}</div>
+                      </button>
                     </div>
-                  </motion.button>
+
+                    <AnimatePresence initial={false}>
+                      {!collapsed && (
+                        <motion.div
+                          key={`group-${yr}`}
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.18 }}
+                          className="space-y-2 overflow-hidden"
+                        >
+                          {items.map((item: any) => {
+                          const dateSource = item.submissionDate || item.interviewDate || '';
+                          const monthYear = dateSource ? getMonthYear(dateSource) : '';
+                          return (
+                            <motion.button
+                              key={item.id}
+                              onClick={() => setSelectedInterview(item)}
+                              className={`cursor-pointer w-full text-left py-2 px-4 rounded-lg transition-all relative ${
+                                    selectedInterview?.id === item.id
+                                      ? 'bg-blue-50 border-2 border-blue-500 shadow-sm'
+                                      : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                                  }`}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              {/* Centered month/year separator inside the item */}
+                              {monthYear && (
+                                <div className="flex items-center justify-center mb-2">
+                                  <div className="border-t border-gray-200 flex-1 mr-2" />
+                                  <div className="px-3 text-sm font-semibold text-gray-500 uppercase tracking-wider bg-white">{monthYear}</div>
+                                  <div className="border-t border-gray-200 flex-1 ml-2" />
+                                </div>
+                              )}
+
+                              <div className={`absolute -left-[17px] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 ${
+                                selectedInterview?.id === item.id ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                              }`} />
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-semibold text-gray-900 text-base truncate">{item.companyName}</h4>
+                                  <p className="text-sm text-gray-600 mt-0.5 line-clamp-1">{item.role}</p>
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <span className="text-sm text-gray-500 mr-1"> Submission Date: </span>
+                                    <span className="text-sm text-gray-500">{dateSource ? formatDisplayDate(dateSource) : 'N/A'}</span>
+                                  </div>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                                  item.status === 'completed'
+                                    ? 'bg-green-100 text-green-700'
+                                    : item.status === 'scheduled' || item.status.toLowerCase().includes('sched')
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-yellow-100 text-yellow-700'
+                                }`}> {item.status} </span>
+                              </div>
+                            </motion.button>
+                          );
+                        })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 );
               })}
             </div>
@@ -353,7 +413,7 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
                         </div>
                         <h4 className="font-semibold text-gray-900">HR Contact</h4>
                       </div>
-                      <div className="ml-10">
+                      <div className="mt-1">
                         {(() => {
                           const primary = selectedInterview.contacts && selectedInterview.contacts.length > 0
                             ? selectedInterview.contacts[0]
@@ -383,7 +443,7 @@ export function InterviewTimeline({ applications, companies }: { applications?: 
                       </div>
                       <h4 className="font-semibold text-gray-900">Interview Notes & Details</h4>
                     </div>
-                    <div className="ml-10">
+                    <div className="mt-1">
                       <textarea
                         name="interviewNotes"
                         value={String(selectedInterview?.otherDetails || selectedInterview?.statusHistory || '').replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
