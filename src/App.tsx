@@ -613,6 +613,9 @@ export default function App() {
   }, []);
 
   // Scroll to top when Applications tab becomes active
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [focusSearchRequest, setFocusSearchRequest] = useState(false);
+
   useEffect(() => {
     if (activeTab === 'applications') {
       try {
@@ -629,6 +632,15 @@ export default function App() {
       setSelectedTimeframe('daily');
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'applications' && focusSearchRequest) {
+      setTimeout(() => {
+        try { searchInputRef.current && searchInputRef.current.focus(); } catch (e) {}
+      }, 50);
+      setFocusSearchRequest(false);
+    }
+  }, [activeTab, focusSearchRequest]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
@@ -1781,7 +1793,15 @@ export default function App() {
               <option value="interviews">Interviews</option>
             </select>
           </div>
-          <div className="ml-4">
+          <div className="ml-4 flex items-center space-x-2 shrink-0">
+            <button
+              onClick={() => { setActiveTab('applications'); setFocusSearchRequest(true); }}
+              title="Search applications"
+              className="mr-3 p-2 rounded-md hover:bg-gray-100 text-gray-700 cursor-pointer"
+              aria-label="Open search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
             <button
               onClick={openAddForm}
               className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700 cursor-pointer"
@@ -2291,6 +2311,7 @@ export default function App() {
                   <div className="flex items-center space-x-2" >
                     <div className="relative w-full md:w-3/4 min-w-0">
                       <input
+                        ref={searchInputRef}
                         type="text"
                         placeholder="Search applications..."
                         value={searchTerm}

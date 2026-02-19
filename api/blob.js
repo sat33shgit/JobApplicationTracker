@@ -287,7 +287,7 @@ module.exports.createSignedGetUrl = async function createSignedGetUrl(key, opts 
     const r2Signed = await createSignedGetUrlR2(key, opts);
     if (r2Signed) return r2Signed;
   } catch (e) {
-    console.warn('createSignedGetUrlR2 failed', e && e.message);
+    if (process.env.NODE_ENV !== 'production') console.warn('createSignedGetUrlR2 failed', e && e.message);
   }
   // Fallback: return null or public URL if configured
   const publicPrefix = process.env.R2_PUBLIC_URL_PREFIX;
@@ -312,7 +312,7 @@ module.exports.delete = async function deleteBlob({ key, url }) {
         await client.send(cmd);
         return true;
       } catch (e) {
-        console.warn('R2 delete failed', e && e.message);
+        if (process.env.NODE_ENV !== 'production') console.warn('R2 delete failed', e && e.message);
       }
     }
   }
@@ -325,9 +325,9 @@ module.exports.delete = async function deleteBlob({ key, url }) {
       const res = await fetch(delUrl, { method: 'DELETE', headers: { authorization: `Bearer ${rwToken}` } });
       if (res.ok) return true;
       const txt = await res.text().catch(() => '');
-      console.warn('vercel blob delete responded', res.status, txt);
+      if (process.env.NODE_ENV !== 'production') console.warn('vercel blob delete responded', res.status, txt);
     } catch (e) {
-      console.warn('vercel blob delete failed', e && e.message);
+      if (process.env.NODE_ENV !== 'production') console.warn('vercel blob delete failed', e && e.message);
     }
   }
 
@@ -341,7 +341,7 @@ module.exports.delete = async function deleteBlob({ key, url }) {
       }
     }
   } catch (e) {
-    console.warn('local blob delete failed', e && e.message);
+    if (process.env.NODE_ENV !== 'production') console.warn('local blob delete failed', e && e.message);
   }
 
   return false;

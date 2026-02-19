@@ -82,7 +82,7 @@ async function mockQuery(text, params) {
     jobs.splice(idx, 1);
     return { rows: [], rowCount: 1 };
   }
-  console.warn('Mock DB: Unhandled SQL:', text);
+  if (process.env.NODE_ENV !== 'production') console.warn('Mock DB: Unhandled SQL:', text);
   return { rows: [], rowCount: 0 };
 }
 
@@ -99,7 +99,7 @@ if (connectionString && process.env.FORCE_LOCAL_DB !== 'true') {
       return await pool.query(text, params);
     } catch (e) {
       // If connection refused or similar, fallback to mock DB to keep local dev usable
-      console.warn('Postgres query failed, falling back to in-memory mock DB:', e && e.message);
+      if (process.env.NODE_ENV !== 'production') console.warn('Postgres query failed, falling back to in-memory mock DB:', e && e.message);
       return mockQuery(text, params);
     }
   }
@@ -107,6 +107,6 @@ if (connectionString && process.env.FORCE_LOCAL_DB !== 'true') {
   module.exports = { query, pool };
 
 } else {
-  console.warn('No DATABASE_URL or VERCEL_POSTGRES_URL found in env — using in-memory mock DB for dev.');
+  if (process.env.NODE_ENV !== 'production') console.warn('No DATABASE_URL or VERCEL_POSTGRES_URL found in env — using in-memory mock DB for dev.');
   module.exports = { query: mockQuery, pool: null };
 }
