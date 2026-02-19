@@ -567,6 +567,7 @@ export default function App() {
             id: r.id,
             companyId,
             role: r.title || '',
+            track: r.track,
             dateApplied,
             interviewDate,
             dateAppliedTs,
@@ -2254,7 +2255,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              <InterviewTimeline applications={applications} companies={companies} />
+              <InterviewTimeline applications={applications} companies={companies} onViewApplication={handleView} />
             </motion.div>
           )}
 

@@ -22,14 +22,14 @@ module.exports = async function (req, res) {
       try {
         blob = require('../blob');
       } catch (e) {
-        console.warn('blob helper load failed, skipping storage delete', e && e.message);
+        if (process.env.NODE_ENV !== 'production') console.warn('blob helper load failed, skipping storage delete', e && e.message);
       }
 
       if (blob && typeof blob.delete === 'function') {
         try {
           await blob.delete({ key: att.storage_key, url: att.url });
         } catch (e) {
-          console.warn('Failed to delete blob for attachment', att.id, e && e.message);
+          if (process.env.NODE_ENV !== 'production') console.warn('Failed to delete blob for attachment', att.id, e && e.message);
         }
       }
 
@@ -65,7 +65,7 @@ module.exports = async function (req, res) {
           }
         }
       } catch (e) {
-        console.warn('createSignedGetUrl failed', e && e.message);
+        if (process.env.NODE_ENV !== 'production') console.warn('createSignedGetUrl failed', e && e.message);
       }
     }
 
