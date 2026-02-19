@@ -2,19 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Mail, User, FileText, ChevronRight, Building2, Clock, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-interface InterviewResponse {
-  id: number;
-  companyName: string;
-  role: string;
-  dateOfInterview: string;
-  hrPerson: {
-    name: string;
-    email: string;
-  };
-  otherDetails: string;
-  status: 'scheduled' | 'completed' | 'pending';
-}
-
 // Parse a YYYY-MM-DD string into a local Date (avoids timezone shifts)
 const parseLocalYMD = (s?: string) => {
   if (!s) return null;
@@ -45,61 +32,106 @@ const getMonthYear = (isoDate: string) => {
   return `${month} ${year}`;
 };
 
-export function InterviewTimeline({ applications: _applications, companies: _companies }: { applications?: any[]; companies?: { id: number; name: string }[] }) {
+export function InterviewTimeline({ applications: _applications, companies: _companies, onViewApplication }: { applications?: any[]; companies?: { id: number; name: string }[]; onViewApplication?: (id: number) => void }) {
   // Ignore `applications` prop for the interviews page and always fetch tracked jobs (track === 't').
   // Start with mock data until the tracked jobs are loaded.
   // start with empty list; we'll populate from the API
   const [data, setData] = useState<any[]>([]);
   const [selectedInterview, setSelectedInterview] = useState<any | null>(null);
 
-  // Load jobs directly and keep only rows where `track === 't'` (string 't').
+  // Prefer using preloaded `applications` prop when available to avoid an extra API round-trip.
   useEffect(() => {
     let mounted = true;
-    async function loadTrackedJobs() {
-      try {
-        const resp = await fetch('/api/jobs');
-        if (!resp.ok) return;
-        const rows = await resp.json();
-        const filtered = rows.filter((r: any) => {
-          if (!r) return false;
-          // Accept string 't', boolean true, or string 'true' (case-insensitive)
-          const v = r.track;
-          return v === 't' || v === 'T' || v === true || (typeof v === 'string' && v.toLowerCase() === 'true');
-        });
-        const mapped = filtered.map((r: any) => {
-          const applied = r.applied_date || r.dateApplied || '';
-          const appliedIso = applied ? new Date(applied).toISOString().slice(0,10) : '';
-          const appliedTs = applied ? new Date((appliedIso) + 'T00:00:00').getTime() : 0;
-          return {
-            id: r.id,
-            companyName: r.company || 'Unknown',
-            role: r.title || r.role || '',
-            submissionDate: appliedIso,
-            submissionTs: r.dateAppliedTs || (parseLocalYMD(appliedIso) || new Date(appliedIso)).getTime(),
-            interviewDate: r.interview_date ? (r.interview_date.slice ? r.interview_date.slice(0,10) : r.interview_date) : (r.dateOfInterview || ''),
-            contacts: r.contacts || r.metadata?.contacts || [],
-            status: typeof r.status === 'string' ? (r.status.charAt(0).toUpperCase() + r.status.slice(1)) : (r.status || 'Applied'),
-            statusHistory: r.status_notes || r.statusNotes || '',
-            hrPerson: (r.contacts && r.contacts[0]) || { name: '', email: '' }
-          };
-        });
-        if (mounted) {
-          if (mapped.length > 0) {
-            setData(mapped);
-            setSelectedInterview(mapped[0]);
-          } else {
-            // No tracked rows — show empty list
-            setData([]);
-            setSelectedInterview(null);
-          }
+
+    const buildFromProps = () => {
+      if (!Array.isArray(_applications) || _applications.length === 0) return false;
+      // Only use applications explicitly marked as tracked (track === 't')
+      const src = (_applications || []).filter((r: any) => {
+        if (!r) return false;
+        const v = r.track;
+        return v === 't' || v === 'T' || v === true || (typeof v === 'string' && v.toLowerCase() === 'true');
+      });
+      const companiesMap = new Map<number, string>();
+      (_companies || []).forEach((c) => { if (c && typeof c.id === 'number') companiesMap.set(c.id, c.name); });
+
+      const mapped = src.map((r: any) => {
+        const applied = r.dateApplied || r.applied_date || '';
+        const appliedIso = applied ? new Date(applied).toISOString().slice(0,10) : '';
+        return {
+          id: r.id,
+          companyName: (r.companyName || r.company) || (r.companyId ? companiesMap.get(r.companyId) : undefined) || 'Unknown',
+          role: r.role || r.title || '',
+          submissionDate: appliedIso,
+          submissionTs: r.dateAppliedTs || (appliedIso ? (parseLocalYMD(appliedIso) || new Date(appliedIso)).getTime() : 0),
+          interviewDate: r.interviewDate || r.interview_date || r.dateOfInterview || '',
+          contacts: r.contacts || r.metadata?.contacts || [],
+          status: typeof r.status === 'string' ? (r.status.charAt(0).toUpperCase() + r.status.slice(1)) : (r.status || 'Applied'),
+          statusHistory: r.statusNotes || r.status_notes || r.notes || '',
+          hrPerson: (r.contacts && r.contacts[0]) || { name: '', email: '' }
+        };
+      });
+
+      if (mounted) {
+        if (mapped.length > 0) {
+          setData(mapped);
+          setSelectedInterview(mapped[0]);
+        } else {
+          setData([]);
+          setSelectedInterview(null);
         }
-      } catch (e) {
-        // ignore errors and keep mock data
       }
+      return true;
+    };
+
+    if (!buildFromProps()) {
+      // Fallback: load jobs directly and keep only rows where `track === 't'` (string 't').
+      async function loadTrackedJobs() {
+        try {
+          const resp = await fetch('/api/jobs');
+          if (!resp.ok) return;
+          const rows = await resp.json();
+          const filtered = rows.filter((r: any) => {
+            if (!r) return false;
+            // Accept string 't', boolean true, or string 'true' (case-insensitive)
+            const v = r.track;
+            return v === 't' || v === 'T' || v === true || (typeof v === 'string' && v.toLowerCase() === 'true');
+          });
+          const mapped = filtered.map((r: any) => {
+            const applied = r.applied_date || r.dateApplied || '';
+            const appliedIso = applied ? new Date(applied).toISOString().slice(0,10) : '';
+            return {
+              id: r.id,
+              companyName: r.company || 'Unknown',
+              role: r.title || r.role || '',
+              submissionDate: appliedIso,
+              submissionTs: r.dateAppliedTs || (parseLocalYMD(appliedIso) || new Date(appliedIso)).getTime(),
+              interviewDate: r.interview_date ? (r.interview_date.slice ? r.interview_date.slice(0,10) : r.interview_date) : (r.dateOfInterview || ''),
+              contacts: r.contacts || r.metadata?.contacts || [],
+              status: typeof r.status === 'string' ? (r.status.charAt(0).toUpperCase() + r.status.slice(1)) : (r.status || 'Applied'),
+              statusHistory: r.status_notes || r.statusNotes || '',
+              hrPerson: (r.contacts && r.contacts[0]) || { name: '', email: '' }
+            };
+          });
+          if (mounted) {
+            if (mapped.length > 0) {
+              setData(mapped);
+              setSelectedInterview(mapped[0]);
+            } else {
+              // No tracked rows — show empty list
+              setData([]);
+              setSelectedInterview(null);
+            }
+          }
+        } catch (e) {
+          // ignore errors and keep mock data
+        }
+      }
+      loadTrackedJobs();
     }
-    loadTrackedJobs();
+
     return () => { mounted = false; };
-  }, []);
+  // Rebuild when props change
+  }, [_applications, _companies]);
   const [viewMode, setViewMode] = useState<'timeline' | 'list'>('timeline');
 
   // List view sorting state
@@ -363,15 +395,17 @@ export function InterviewTimeline({ applications: _applications, companies: _com
                         </div>
                       </div>
                       {/* Compact status badge at top-right */}
-                      <span className={`ml-auto self-start px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${
+                      <div className="ml-auto self-start">
+                        <span className={`px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${
                         String(selectedInterview.status).toLowerCase() === 'completed'
                           ? 'bg-green-100 text-green-700'
                           : String(selectedInterview.status).toLowerCase().includes('sched')
                           ? 'bg-blue-100 text-blue-700'
                           : 'bg-yellow-100 text-yellow-700'
                       }`}>
-                        {selectedInterview?.status ? String(selectedInterview.status) : 'N/A'}
-                      </span>
+                          {selectedInterview?.status ? String(selectedInterview.status) : 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -444,6 +478,18 @@ export function InterviewTimeline({ applications: _applications, companies: _com
                       />
                     </div>
                   </div>
+
+                  {/* Action: Detailed View button placed at bottom-right of details panel */}
+                  {onViewApplication && selectedInterview?.id && (
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={() => onViewApplication(selectedInterview.id)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 cursor-pointer"
+                      >
+                        Detailed View
+                      </button>
+                    </div>
+                  )}
 
                   
                 </motion.div>

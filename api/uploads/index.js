@@ -77,7 +77,7 @@ module.exports = async function (req, res) {
     } catch (err) {
       console.error('blob.save failed:', err && err.message);
       // Attempt to clean up the DB row we created to avoid orphaned records
-      try { await db.query('DELETE FROM attachments WHERE id=$1', [inserted.id]); } catch (e) { console.warn('failed to delete attachment row after save error', e && e.message); }
+      try { await db.query('DELETE FROM attachments WHERE id=$1', [inserted.id]); } catch (e) { if (process.env.NODE_ENV !== 'production') console.warn('failed to delete attachment row after save error', e && e.message); }
       return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });
     }
 

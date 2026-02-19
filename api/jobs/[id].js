@@ -91,7 +91,7 @@ module.exports = async function (req, res) {
           blob = require('../blob');
         } catch (re) {
           // If blob helper can't be loaded, log and continue — attachments will be removed from DB.
-          console.warn('blob helper load failed, skipping provider deletes', re && re.message);
+          if (process.env.NODE_ENV !== 'production') console.warn('blob helper load failed, skipping provider deletes', re && re.message);
         }
 
         if (blob && typeof blob.delete === 'function') {
@@ -99,7 +99,7 @@ module.exports = async function (req, res) {
             try {
               await blob.delete({ key: a.storage_key || a.key, url: a.url });
             } catch (e) {
-              console.warn('Failed to delete blob for attachment', a.id, e && e.message);
+              if (process.env.NODE_ENV !== 'production') console.warn('Failed to delete blob for attachment', a.id, e && e.message);
             }
           }
         }
