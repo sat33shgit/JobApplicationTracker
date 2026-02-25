@@ -4,7 +4,7 @@ import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import { motion } from "motion/react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
@@ -265,6 +265,30 @@ export default function App() {
     return (
       <text x={x} y={y} fill={fill} fontSize={12} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
         {pct}%
+      </text>
+    );
+  };
+
+  // Custom label renderer for bars: place value inside when tall enough,
+  // otherwise render above the bar so it remains readable.
+  const renderBarLabel = (props: any) => {
+    const { x, y, width, height, value } = props;
+    const cx = x + width / 2;
+    const fontSize = 14;
+
+    // If bar height is small, place label above the bar
+    if ((height || 0) < 18) {
+      return (
+        <text x={cx} y={y - 6} fill="#111827" fontSize={fontSize} fontWeight={700} textAnchor="middle">
+          {value}
+        </text>
+      );
+    }
+
+    // Otherwise place label centered inside the bar (white for contrast)
+    return (
+      <text x={cx} y={y + height / 2} fill="#ffffff" fontSize={fontSize} fontWeight={700} textAnchor="middle" dominantBaseline="central">
+        {value}
       </text>
     );
   };
@@ -1762,7 +1786,7 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 bg-white shadow-md py-4 px-6 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Job Application Tracker</h1>
+          <h1 className="text-2xl font-bold">Job Applications Tracker</h1>
           <nav className="hidden md:flex space-x-4">
             <button 
               onClick={() => setActiveTab("dashboard")}
@@ -1919,14 +1943,14 @@ export default function App() {
                   </div>
                   
                   {/* Date Range Filter */}
-                  <div className="flex flex-col gap-4 px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex flex-col px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
                     {/* First row: Date inputs, Status, Clear */}
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-4 w-full">
+                      <div className="flex items-center gap-1.5 mr-2">
                         <Calendar className="h-5 w-5 text-blue-500" />
                         <span className="text-sm font-medium text-gray-700">Date Range:</span>
                       </div>
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2">
                         {selectedTimeframe === 'yearly' ? (
                           // Year dropdowns for yearly view
                           <>
@@ -1997,8 +2021,9 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                      <div className="flex items-center gap-2">
+                      <div className="border-l border-gray-300 h-8 ml-3 mr-1"></div>
+
+                      <div className="flex items-center gap-2 mr-3">
                         <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Status:</label>
                         <select
                           value={selectedStatus}
@@ -2015,48 +2040,42 @@ export default function App() {
                       <button
                         onClick={clearDateRange}
                         disabled={!(filterStartDate || filterEndDate || selectedStatus)}
-                        className={`flex items-center gap-1 px-3 py-2 text-sm rounded-md border transition-colors ${!(filterStartDate || filterEndDate || selectedStatus) ? 'px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2' : 'px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2'}`}
+                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg border border-gray-200 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <X className="h-4 w-4" />
                         <span>Clear</span>
                       </button>
-                      </div>
+
+                      {selectedTimeframe === 'daily' && (
+                        <div className="text-sm text-gray-500 whitespace-nowrap ml-auto">
+                          <span className="font-medium">Max:</span> 30 days
+                        </div>
+                      )}
                     </div>
 
                     {/* Second row: Quick range buttons (Daily only) */}
                     {selectedTimeframe === 'daily' && (
-                      <>
-                        {/* Quick Range and Max Info */}
-        <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          {/* Quick Range Buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Quick range:</span>
-            <button
-              onClick={() => handleQuickRange(10)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
-            >
-              Last 10 days
-            </button>
-            <button
-              onClick={() => handleQuickRange(20)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
-            >
-              Last 20 days
-            </button>
-            <button
-              onClick={() => handleQuickRange(30)}
-              className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
-            >
-              Last 30 days
-            </button>
-          </div>
-
-          {/* Max Info */}
-          <div className="text-sm text-gray-500">
-            <span className="font-medium">Max:</span> 30 days
-          </div>
-        </div>
-                      </>
+                      <div className="mt-8 pt-4 border-t border-gray-200 flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Quick range:</span>
+                        <button
+                          onClick={() => handleQuickRange(10)}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
+                        >
+                          Last 10 days
+                        </button>
+                        <button
+                          onClick={() => handleQuickRange(20)}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
+                        >
+                          Last 20 days
+                        </button>
+                        <button
+                          onClick={() => handleQuickRange(30)}
+                          className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
+                        >
+                          Last 30 days
+                        </button>
+                      </div>
                     )}
 
                     {/* Max range info for non-daily views */}
@@ -2107,11 +2126,8 @@ export default function App() {
                           />
                           <YAxis allowDecimals={false} />
                           <Tooltip />
-                          <Bar dataKey="count">
-                            {(selectedTimeframe === "daily" ? stats.daily : 
-                              selectedTimeframe === "monthly" ? stats.monthly : stats.yearly).map((entry, idx) => (
-                              <Cell key={`bar-${idx}`} fill={COLORS[idx % COLORS.length]} />
-                            ))}
+                          <Bar dataKey="count" fill="#0088FE">
+                            <LabelList dataKey="count" content={renderBarLabel} />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -3176,7 +3192,7 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-white border-t py-4 px-6">
         <div className="max-w-7xl mx-auto text-center text-gray-500 text-sm">
-          <p>Job Application Tracker &copy; {new Date().getFullYear()}</p>
+          <p>Job Applications Tracker &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
     </div>
