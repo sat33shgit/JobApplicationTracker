@@ -4,7 +4,7 @@ import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import { motion } from "motion/react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from "recharts";
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
@@ -265,6 +265,30 @@ export default function App() {
     return (
       <text x={x} y={y} fill={fill} fontSize={12} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
         {pct}%
+      </text>
+    );
+  };
+
+  // Custom label renderer for bars: place value inside when tall enough,
+  // otherwise render above the bar so it remains readable.
+  const renderBarLabel = (props: any) => {
+    const { x, y, width, height, value } = props;
+    const cx = x + width / 2;
+    const fontSize = 14;
+
+    // If bar height is small, place label above the bar
+    if ((height || 0) < 18) {
+      return (
+        <text x={cx} y={y - 6} fill="#111827" fontSize={fontSize} fontWeight={700} textAnchor="middle">
+          {value}
+        </text>
+      );
+    }
+
+    // Otherwise place label centered inside the bar (white for contrast)
+    return (
+      <text x={cx} y={y + height / 2} fill="#ffffff" fontSize={fontSize} fontWeight={700} textAnchor="middle" dominantBaseline="central">
+        {value}
       </text>
     );
   };
@@ -2107,11 +2131,8 @@ export default function App() {
                           />
                           <YAxis allowDecimals={false} />
                           <Tooltip />
-                          <Bar dataKey="count">
-                            {(selectedTimeframe === "daily" ? stats.daily : 
-                              selectedTimeframe === "monthly" ? stats.monthly : stats.yearly).map((entry, idx) => (
-                              <Cell key={`bar-${idx}`} fill={COLORS[idx % COLORS.length]} />
-                            ))}
+                          <Bar dataKey="count" fill="#0088FE">
+                            <LabelList dataKey="count" content={renderBarLabel} />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
