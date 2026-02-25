@@ -1,4 +1,4 @@
--- Initial schema for Job Application Tracker
+-- Initial schema for Job Applications Tracker
 -- Jobs, notes, tags, and job_tags
 
 CREATE TABLE IF NOT EXISTS jobs (

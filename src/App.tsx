@@ -1786,7 +1786,7 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 bg-white shadow-md py-4 px-6 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Job Application Tracker</h1>
+          <h1 className="text-2xl font-bold">Job Applications Tracker</h1>
           <nav className="hidden md:flex space-x-4">
             <button 
               onClick={() => setActiveTab("dashboard")}
@@ -3197,7 +3197,7 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-white border-t py-4 px-6">
         <div className="max-w-7xl mx-auto text-center text-gray-500 text-sm">
-          <p>Job Application Tracker &copy; {new Date().getFullYear()}</p>
+          <p>Job Applications Tracker &copy; {new Date().getFullYear()}</p>
         </div>
       </footer>
     </div>

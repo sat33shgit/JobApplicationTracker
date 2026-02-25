@@ -17,9 +17,9 @@ This repository now builds only the web application. Run:
 cd c:\Sateesh\Projects\JobApplicationTracker\TrackerApp
 npm install
 npm run build
-# Job Application Tracker
+# Job Applications Tracker
 
-This repository contains the source for the Job Application Tracker web application.
+This repository contains the source for the Job Applications Tracker web application.
 
 ## Running the code (quick)
 
