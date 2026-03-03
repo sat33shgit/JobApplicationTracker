@@ -184,6 +184,38 @@ async function routeApi(req, res) {
       }
     }
 
+    if (resource === 'interview-questions') {
+      if (!id) {
+        const handlerPath = path.join(API_ROOT, 'interview-questions', 'index.js');
+        if (!fs.existsSync(handlerPath)) return false;
+        if (require.cache[handlerPath]) delete require.cache[handlerPath];
+        const dbPath = path.join(API_ROOT, 'db.js');
+        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
+        delete require.cache[require.resolve(handlerPath)];
+        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
+        const handler = require(handlerPath);
+        await handler(adapterReq, adapterRes);
+        return true;
+      } else {
+        const explicitHandler = path.join(API_ROOT, 'interview-questions', `${id}.js`);
+        const genericHandler = path.join(API_ROOT, 'interview-questions', '[id].js');
+        let handlerPath = null;
+        if (fs.existsSync(explicitHandler)) handlerPath = explicitHandler;
+        else if (fs.existsSync(genericHandler)) handlerPath = genericHandler;
+        else return false;
+
+        if (require.cache[handlerPath]) delete require.cache[handlerPath];
+        const dbPath = path.join(API_ROOT, 'db.js');
+        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
+        delete require.cache[require.resolve(handlerPath)];
+        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
+        adapterReq.url = pathname;
+        const handler = require(handlerPath);
+        await handler(adapterReq, adapterRes);
+        return true;
+      }
+    }
+
     // other api resources can be added similarly
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('API handler error', err);
