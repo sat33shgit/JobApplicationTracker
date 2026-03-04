@@ -57,6 +57,52 @@ async function mockQuery(text, params) {
     attachments.push(a);
     return { rows: [clone(a)], rowCount: 1 };
   }
+  // Interview questions mock handling
+  if (tl.startsWith('select') && tl.includes('from interview_questions') && tl.includes('order by')) {
+    // store interview questions in a local array attached to module scope
+    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
+    const rows = global.__mock_interview_questions.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    return { rows: clone(rows), rowCount: rows.length };
+  }
+  if (tl.startsWith('insert into interview_questions')) {
+    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
+    const [question, answer, category] = params || [];
+    const nextId = global.__mock_interview_questions_next_id = (global.__mock_interview_questions_next_id || 1);
+    const row = {
+      id: nextId,
+      question: question || null,
+      answer: answer || null,
+      category: category || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    global.__mock_interview_questions_next_id = nextId + 1;
+    global.__mock_interview_questions.push(row);
+    return { rows: [clone(row)], rowCount: 1 };
+  }
+  if (tl.startsWith('update interview_questions set')) {
+    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
+    const m = t.match(/update\s+interview_questions\s+set\s+([\s\S]+?)\s+where\s+id\s*=\s*\$\d+/i);
+    if (!m) return { rows: [], rowCount: 0 };
+    const values = params || [];
+    const id = values[values.length - 1];
+    const row = global.__mock_interview_questions.find(r => r.id === Number(id));
+    if (!row) return { rows: [], rowCount: 0 };
+    // assign first three params to question, answer, category
+    row.question = values[0];
+    row.answer = values[1];
+    row.category = values[2];
+    row.updated_at = new Date().toISOString();
+    return { rows: [clone(row)], rowCount: 1 };
+  }
+  if (tl.startsWith('delete from interview_questions')) {
+    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
+    const id = params && params[0];
+    const idx = global.__mock_interview_questions.findIndex(r => r.id === Number(id));
+    if (idx === -1) return { rows: [], rowCount: 0 };
+    global.__mock_interview_questions.splice(idx, 1);
+    return { rows: [], rowCount: 1 };
+  }
   if (tl.startsWith('update jobs set')) {
     const m = t.match(/update\s+jobs\s+set\s+([\s\S]+?)\s+where\s+id\s*=\s*\$\d+/i);
     if (!m) return { rows: [], rowCount: 0 };

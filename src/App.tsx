@@ -9,6 +9,7 @@ import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Ed
 import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
 import { InterviewTimeline } from './components/InterviewTimeline';
+import { InterviewQuestions } from './components/InterviewQuestions';
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
 // Accepts `YYYY-MM-DD`, full ISO strings, or `Date` objects. When given full
@@ -68,7 +69,8 @@ const statusOptions = [
   "Rejected",
   "Withdrawn",
   "Paused",
-  "No Update"
+  "No Update",
+  "Closed"
 ];
 
 // Colors for charts
@@ -83,7 +85,8 @@ const COLORS = [
   '#F38042', // Rejected
   '#8884d8', // Withdrawn
   '#D35400', // Paused (dark orange)
-  '#e0AEC0'  // No Update (gray)
+  '#e0AEC0', // No Update (gray)
+  '#6B7280'  // Closed (slate gray)
 ];
 
 // Function to generate statistics based on date range, timeframe and optional status
@@ -1806,6 +1809,12 @@ export default function App() {
             >
               Interviews
             </button>
+            <button
+              onClick={() => setActiveTab("questions")}
+              className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "questions" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
+            >
+              Questions and Answers
+            </button>
           </nav>
           <div className="md:hidden">
             <select 
@@ -1816,6 +1825,7 @@ export default function App() {
               <option value="dashboard">Dashboard</option>
               <option value="applications">Applications</option>
               <option value="interviews">Interviews</option>
+              <option value="questions">Interview Questions</option>
             </select>
           </div>
           <div className="ml-4 flex items-center space-x-2 shrink-0">
@@ -1919,7 +1929,7 @@ export default function App() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex flex-col space-y-4 mb-6">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-xl font-semibold">Application Statistics</h2>
+                    <h2 className="text-2xl font-bold text-gray-900">Application Statistics</h2>
                     <div className="flex space-x-2">
                       <button 
                         onClick={() => handleTimeframeChange("daily")}
@@ -2182,7 +2192,7 @@ export default function App() {
               
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold">Recent Applications (Top 10)</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">Recent Applications (Top 10)</h2>
                   <button 
                     onClick={openApplicationsNoFilters}
                     className="text-blue-600 hover:text-blue-800 cursor-pointer"
@@ -2275,6 +2285,18 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* Interview Questions (static list/page) */}
+          {activeTab === "questions" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <InterviewQuestions />
+            </motion.div>
+          )}
+
           {/* Applications */}
           {activeTab === "applications" && (
             <motion.div 
@@ -2304,7 +2326,7 @@ export default function App() {
                     </div>
                   )}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2">
-                  <h2 className="text-xl font-semibold">Job Applications</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">Job Applications</h2>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                     <button 
                       onClick={handleImportClick}
