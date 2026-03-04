@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -40,6 +40,15 @@ export function InterviewQuestions() {
   const [errors, setErrors] = useState({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const toastTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const filteredQuestions = useMemo(() => questions.filter(q => {
     const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''}`.toLowerCase();
@@ -167,6 +176,7 @@ export function InterviewQuestions() {
   const handleDelete = (id) => { setPendingDeleteId(id); setShowDeleteModal(true); };
   const confirmDelete = async () => {
     if (pendingDeleteId == null) return;
+    const deletedText = questions.find(q => q.id === pendingDeleteId)?.question;
     try {
       const resp = await fetch(`/api/interview-questions/${pendingDeleteId}`, { method: 'DELETE' });
       if (!resp.ok && resp.status !== 204) {
@@ -195,6 +205,12 @@ export function InterviewQuestions() {
       setExpandedQuestions(prev => { const updated = { ...prev }; delete updated[pendingDeleteId]; return updated; });
       setPendingDeleteId(null);
       setShowDeleteModal(false);
+      // show toast message
+      const msg = deletedText ? `Deleted Successfully: ${deletedText}` : 'Question deleted';
+      setToastMessage(msg);
+      setShowToast(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
     } catch (err) {
       console.error('Delete failed', err);
       alert('Failed to delete question: ' + (err && err.message ? err.message : 'unknown error'));
@@ -358,7 +374,7 @@ export function InterviewQuestions() {
                   {errors.answer && <p className="text-red-500 text-sm mt-1">{errors.answer}</p>}
                 </div>
 
-                <div className="flex justify-end space-x-6 pt-4">
+                <div className="flex justify-end pt-4 gap-6">
                   <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
                   <button type="submit" className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">{editingId ? 'Update Question' : 'Add Question'}</button>
                 </div>
@@ -379,7 +395,7 @@ export function InterviewQuestions() {
                 <div className="mb-4 p-3 bg-gray-50 rounded text-sm text-gray-800 font-medium">{questions.find(q => q.id === pendingDeleteId)?.question}</div>
               )}
 
-              <div className="border-t border-gray-200 mt-4 pt-4 flex justify-end items-center gap-3">
+              <div className="border-t border-gray-200 mt-4 pt-4 flex justify-end items-center gap-6">
                 <button onClick={cancelDelete} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 bg-white">Cancel</button>
                 <button onClick={confirmDelete} className="cursor-pointer px-4 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50 bg-white">Delete</button>
               </div>
@@ -418,6 +434,28 @@ export function InterviewQuestions() {
         </button>,
         document.body
       )}
+        {/* Toast message (center bottom) */}
+        {showToast && ReactDOM.createPortal(
+          <div style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: '24px',
+            zIndex: 99999,
+          }}>
+            <div style={{
+              background: 'rgba(17,24,39,0.95)',
+              color: 'white',
+              padding: '10px 16px',
+              borderRadius: 8,
+              boxShadow: '0 6px 20px rgba(0,0,0,0.2)',
+              maxWidth: '85vw',
+              textAlign: 'center',
+              fontSize: 14,
+            }}>{toastMessage}</div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
