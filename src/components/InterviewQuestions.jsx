@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import ReactDOM from 'react-dom';
+import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const categories = [
@@ -201,6 +202,25 @@ export function InterviewQuestions() {
   };
   const cancelDelete = () => { setPendingDeleteId(null); setShowDeleteModal(false); };
 
+  // Back-to-top button: visible once the user has scrolled past one viewport height
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+      setShowBackToTop(scrolled >= window.innerHeight);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.documentElement.scrollTop = 0;
+  }, []);
+
   return (
     <div className="space-y-6">
       
@@ -348,6 +368,37 @@ export function InterviewQuestions() {
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* Floating back-to-top button rendered via portal on document.body */}
+      {showBackToTop && ReactDOM.createPortal(
+        <button
+          onClick={scrollToTop}
+          aria-label="Back to top"
+          style={{
+            position: 'fixed',
+            bottom: '40px',
+            right: '40px',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '48px',
+            height: '48px',
+            padding: 0,
+            borderRadius: '50%',
+            backgroundColor: '#2563eb',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+        >
+          <ArrowUp style={{ width: 20, height: 20 }} />
+        </button>,
+        document.body
       )}
     </div>
   );
