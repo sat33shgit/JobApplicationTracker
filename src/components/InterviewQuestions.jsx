@@ -10,7 +10,7 @@ const categories = [
   'Company Culture',
   'General',
   'Leadership',
-  'Metrics and Data',
+  'Metrics and Reports',
   'Operational Support',
   'Project Management',
   'Project or Team Health',
@@ -36,7 +36,7 @@ export function InterviewQuestions() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expandedQuestions, setExpandedQuestions] = useState({});
-  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: 'Technical', company: '' });
+  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: categories[0], company: '' });
   const [errors, setErrors] = useState({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -150,7 +150,7 @@ export function InterviewQuestions() {
           cachedInterviewQuestions = next;
           setQuestions(next);
         }
-        setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' });
+          setNewQuestion({ question: '', answer: '', category: categories[0], company: '' });
         setShowAddForm(false);
       } catch (err) {
         console.error('Save failed', err);
@@ -265,7 +265,7 @@ export function InterviewQuestions() {
               </button>
 
               <div>
-                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
               </div>
             </div>
           </div>
@@ -344,7 +344,7 @@ export function InterviewQuestions() {
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-semibold">{editingId ? 'Edit Question' : 'Add New Question and Answer'}</h2>
-                <button onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); setErrors({}); }} className="cursor-pointer text-gray-500 hover:text-gray-700"><X className="h-6 w-6"/></button>
+                <button onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '' }); setErrors({}); }} className="cursor-pointer text-gray-500 hover:text-gray-700"><X className="h-6 w-6"/></button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -375,7 +375,7 @@ export function InterviewQuestions() {
                 </div>
 
                 <div className="flex justify-end pt-4 gap-6">
-                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
                   <button type="submit" className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">{editingId ? 'Update Question' : 'Add Question'}</button>
                 </div>
               </form>
