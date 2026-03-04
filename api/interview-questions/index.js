@@ -12,7 +12,8 @@ async function listQuestions(req, res) {
 
 async function createQuestion(req, res) {
   try {
-    const { question, answer, category, company } = req.body || {};
+    const body = (req.body && typeof req.body === 'string') ? (function() { try { return JSON.parse(req.body); } catch (e) { return {}; } })() : (req.body || {});
+    const { question, answer, category, company } = body || {};
     if (!question || !question.trim()) return res.status(400).json({ error: 'question is required' });
     const params = [question.trim(), (answer || null), (category || null), (company || null)];
     const result = await db.query(
