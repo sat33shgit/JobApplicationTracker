@@ -2,7 +2,7 @@ const db = require('../db');
 
 async function listQuestions(req, res) {
   try {
-    const result = await db.query('SELECT id, question, answer, category, created_at, updated_at FROM interview_questions ORDER BY created_at DESC');
+    const result = await db.query('SELECT id, question, answer, category, company, created_at, updated_at FROM interview_questions ORDER BY created_at DESC');
     res.status(200).json(result.rows);
   } catch (err) {
     console.error('listQuestions error', err && err.message);
@@ -12,11 +12,11 @@ async function listQuestions(req, res) {
 
 async function createQuestion(req, res) {
   try {
-    const { question, answer, category } = req.body || {};
+    const { question, answer, category, company } = req.body || {};
     if (!question || !question.trim()) return res.status(400).json({ error: 'question is required' });
-    const params = [question.trim(), (answer || null), (category || null)];
+    const params = [question.trim(), (answer || null), (category || null), (company || null)];
     const result = await db.query(
-      `INSERT INTO interview_questions(question, answer, category) VALUES($1,$2,$3) RETURNING id, question, answer, category, created_at, updated_at`,
+      `INSERT INTO interview_questions(question, answer, category, company) VALUES($1,$2,$3,$4) RETURNING id, question, answer, category, company, created_at, updated_at`,
       params
     );
     res.status(201).json(result.rows[0]);

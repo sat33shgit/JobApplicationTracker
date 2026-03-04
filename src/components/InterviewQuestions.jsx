@@ -32,13 +32,13 @@ export function InterviewQuestions() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expandedQuestions, setExpandedQuestions] = useState({});
-  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: 'Technical' });
+  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: 'Technical', company: '' });
   const [errors, setErrors] = useState({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const filteredQuestions = questions.filter(q => {
-    const searchString = `${q.question} ${q.answer} ${q.category}`.toLowerCase();
+    const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
   });
 
@@ -122,7 +122,7 @@ export function InterviewQuestions() {
           const created = await resp.json();
           setQuestions(prev => [created, ...prev]);
         }
-        setNewQuestion({ question: '', answer: '', category: 'Technical' });
+        setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' });
         setShowAddForm(false);
       } catch (err) {
         console.error('Save failed', err);
@@ -134,14 +134,14 @@ export function InterviewQuestions() {
   const handleEdit = (id) => {
     const q = questions.find(x => x.id === id);
     if (!q) return;
-    setNewQuestion({ question: q.question, answer: q.answer, category: q.category });
+    setNewQuestion({ question: q.question, answer: q.answer, category: q.category, company: q.company || '' });
     setEditingId(id);
     setShowAddForm(true);
   };
 
   const handleAddForCategory = (category) => {
     setEditingId(null);
-    setNewQuestion({ question: '', answer: '', category: category });
+    setNewQuestion({ question: '', answer: '', category: category, company: '' });
     setShowAddForm(true);
   };
 
@@ -180,15 +180,32 @@ export function InterviewQuestions() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
-          <h2 className="text-xl font-semibold whitespace-nowrap">Interview Questions</h2>
-          <div className="flex items-center w-full md:flex-1 space-x-4">
-            <div className="relative flex-1 max-w-lg">
-              <input type="text" placeholder="Search questions and answers..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border rounded-md w-full" />
-              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-            </div>
-            <div className="ml-auto">
-              <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical' }); }} className="cursor-pointer flex items-center justify-center space-x-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold">Interview Questions and Answers</h2>
+          <div className="mb-6 px-6">
+            <div className="flex items-center space-x-2">
+              <div className="relative w-full md:w-3/4 min-w-0">
+                <input
+                  type="text"
+                  placeholder="Search questions and answers..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border rounded-md w-full"
+                />
+                <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+              </div>
+
+              <button
+                onClick={() => setSearchTerm('')}
+                className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+
+              <div>
+                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+              </div>
             </div>
           </div>
         </div>
@@ -208,15 +225,21 @@ export function InterviewQuestions() {
               <div key={category}>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
-                      <div className="ml-4">
-                        <button type="button" onClick={() => handleAddForCategory(category)} className="cursor-pointer text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 mb-3">Add</button>
-                      </div>
+                            <div className="ml-4">
+                              <button type="button" onClick={() => handleAddForCategory(category)} className="cursor-pointer text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 mb-3">Add</button>
+                            </div>
                     </div>
                 <div className="space-y-2">
                   {groupedQuestions[category].map(question => (
                     <motion.div key={question.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border border-gray-200 rounded-lg hover:shadow-md transition-shadow overflow-visible">
-                      <div className="bg-gray-50 rounded-t-lg px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100" onClick={() => toggleQuestion(question.id)}>
-                        <div className="flex items-center space-x-3 flex-1">{expandedQuestions[question.id] ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0"/> : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0"/>}<span className="font-medium text-gray-900">{question.question}</span></div>
+                              <div className="bg-gray-50 rounded-t-lg px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100" onClick={() => toggleQuestion(question.id)}>
+                              <div className="flex items-center space-x-3 flex-1 pl-2">
+                                {expandedQuestions[question.id] ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0"/> : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0"/>}
+                                <div className="min-w-0">
+                                  <div className="font-medium text-gray-900 truncate">{question.question}</div>
+                                  {question.company ? <div className="text-sm text-gray-500 truncate">{question.company}</div> : null}
+                                </div>
+                              </div>
                         <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => handleEdit(question.id)} className="cursor-pointer p-1 text-blue-600 hover:bg-blue-50 rounded" title="Edit question"><Edit className="h-4 w-4"/></button>
                           <button onClick={() => handleDelete(question.id)} className="cursor-pointer p-1 text-red-600 hover:bg-red-50 rounded" title="Delete question"><Trash2 className="h-4 w-4"/></button>
@@ -242,17 +265,23 @@ export function InterviewQuestions() {
           <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-lg shadow-xl mx-auto overflow-y-auto" style={{ width: '33vw', minWidth: '360px', maxWidth: '900px', maxHeight: '90vh' }}>
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold">{editingId ? 'Edit Question' : 'Add New Question'}</h2>
-                <button onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical' }); setErrors({}); }} className="cursor-pointer text-gray-500 hover:text-gray-700"><X className="h-6 w-6"/></button>
+                <h2 className="text-xl font-semibold">{editingId ? 'Edit Question' : 'Add New Question and Answer'}</h2>
+                <button onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); setErrors({}); }} className="cursor-pointer text-gray-500 hover:text-gray-700"><X className="h-6 w-6"/></button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                   <select name="category" value={newQuestion.category} onChange={handleInputChange} className={`w-full border rounded-md px-3 py-2 ${errors.category ? 'border-red-500' : ''}`}>
                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                   {errors.category && <p className="text-red-500 text-sm mt-1">{errors.category}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Company (optional)</label>
+                  <input name="company" value={newQuestion.company} onChange={handleInputChange} placeholder="Company name (optional)" className="w-full border rounded-md px-3 py-2" />
                 </div>
 
                 <div>
@@ -268,7 +297,7 @@ export function InterviewQuestions() {
                 </div>
 
                 <div className="flex justify-end space-x-6 pt-4">
-                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
                   <button type="submit" className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">{editingId ? 'Update Question' : 'Add Question'}</button>
                 </div>
               </form>

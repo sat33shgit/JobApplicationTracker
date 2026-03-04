@@ -1813,7 +1813,7 @@ export default function App() {
               onClick={() => setActiveTab("questions")}
               className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "questions" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
             >
-              Interview Questions
+              Questions and Answers
             </button>
           </nav>
           <div className="md:hidden">
