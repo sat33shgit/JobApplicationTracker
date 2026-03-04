@@ -271,15 +271,33 @@ export function InterviewQuestions() {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
                             <div className="ml-4">
-                              <button type="button" onClick={() => handleAddForCategory(category)} className="cursor-pointer text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 mb-3">Add</button>
+                              <button type="button" onClick={() => handleAddForCategory(category)} className="cursor-pointer text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 mb-4">Add</button>
                             </div>
                     </div>
                 <div className="space-y-2">
                   {groupedQuestions[category].map(question => (
-                    <motion.div key={question.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border border-gray-200 rounded-lg hover:shadow-md transition-shadow overflow-visible">
-                              <div className="bg-gray-50 rounded-t-lg px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100" onClick={() => toggleQuestion(question.id)}>
-                              <div className="flex items-center space-x-3 flex-1 pl-2">
-                                {expandedQuestions[question.id] ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0"/> : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0"/>}
+                    <motion.div
+                      key={question.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="border border-gray-200 rounded-lg hover:shadow-md transition-shadow overflow-hidden"
+                      style={{
+                        borderBottomLeftRadius: expandedQuestions[question.id] ? '0px' : undefined,
+                        borderBottomRightRadius: expandedQuestions[question.id] ? '0px' : undefined,
+                      }}
+                    >
+                              <div
+                                className="bg-gray-50 rounded-t-lg overflow-hidden px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100"
+                                onClick={() => toggleQuestion(question.id)}
+                                style={{
+                                  borderTopLeftRadius: '0.5rem',
+                                  borderTopRightRadius: '0.5rem',
+                                  borderBottomLeftRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
+                                  borderBottomRightRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
+                                }}
+                              >
+                              <div className="flex items-center space-x-4 flex-1 pl-2">
+                                {expandedQuestions[question.id] ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/> : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>}
                                 <div className="min-w-0">
                                   <div className="font-medium text-gray-900 truncate">{question.question}</div>
                                   {question.company ? <div className="text-sm text-gray-500 truncate">{question.company}</div> : null}
