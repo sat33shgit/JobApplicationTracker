@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -25,6 +25,9 @@ const categories = [
 
 // We'll load interview questions from the backend table `interview_questions` instead
 
+// Simple in-memory cache to avoid refetching interview questions on repeated mounts
+let cachedInterviewQuestions = null;
+
 export function InterviewQuestions() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -37,35 +40,44 @@ export function InterviewQuestions() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
-  const filteredQuestions = questions.filter(q => {
+  const filteredQuestions = useMemo(() => questions.filter(q => {
     const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
-  });
+  }), [questions, searchTerm]);
 
   useEffect(() => {
     let mounted = true;
+
+    const setFromRows = (rows) => {
+      const normalized = (Array.isArray(rows) ? rows : []).map(r => ({ ...(r || {}), htmlAnswer: r && r.answer ? textToHtml(r.answer) : '' }));
+      if (mounted) setQuestions(normalized);
+    };
+
+    if (cachedInterviewQuestions) {
+      setFromRows(cachedInterviewQuestions);
+      return () => { mounted = false; };
+    }
+
     async function load() {
-      setLoading(true);
       try {
         const resp = await fetch('/api/interview-questions');
         if (!resp.ok) throw new Error(`Failed to load: ${resp.status}`);
         const data = await resp.json();
-        if (mounted) setQuestions(Array.isArray(data) ? data : []);
+        cachedInterviewQuestions = Array.isArray(data) ? data : [];
+        setFromRows(cachedInterviewQuestions);
       } catch (err) {
         console.error('Failed to load interview questions', err);
-      } finally {
-        if (mounted) setLoading(false);
       }
     }
     load();
     return () => { mounted = false; };
   }, []);
 
-  const groupedQuestions = filteredQuestions.reduce((acc, question) => {
+  const groupedQuestions = useMemo(() => filteredQuestions.reduce((acc, question) => {
     if (!acc[question.category]) acc[question.category] = [];
     acc[question.category].push(question);
     return acc;
-  }, {});
+  }, {}), [filteredQuestions]);
 
   const toggleQuestion = (id) => setExpandedQuestions(prev => ({ ...prev, [id]: !prev[id] }));
   const expandAll = () => { const expanded = {}; filteredQuestions.forEach(q => expanded[q.id] = true); setExpandedQuestions(expanded); };
@@ -114,13 +126,19 @@ export function InterviewQuestions() {
           const resp = await fetch(`/api/interview-questions/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newQuestion) });
           if (!resp.ok) throw new Error('Failed to update');
           const updated = await resp.json();
-          setQuestions(questions.map(q => q.id === editingId ? updated : q));
+          updated.htmlAnswer = updated.answer ? textToHtml(updated.answer) : '';
+          const next = questions.map(q => q.id === editingId ? updated : q);
+          cachedInterviewQuestions = next;
+          setQuestions(next);
           setEditingId(null);
         } else {
           const resp = await fetch('/api/interview-questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newQuestion) });
           if (!resp.ok) throw new Error('Failed to create');
           const created = await resp.json();
-          setQuestions(prev => [created, ...prev]);
+          created.htmlAnswer = created.answer ? textToHtml(created.answer) : '';
+          const next = [created, ...questions];
+          cachedInterviewQuestions = next;
+          setQuestions(next);
         }
         setNewQuestion({ question: '', answer: '', category: 'Technical', company: '' });
         setShowAddForm(false);
@@ -160,12 +178,18 @@ export function InterviewQuestions() {
         const listResp = await fetch('/api/interview-questions');
         if (listResp.ok) {
           const data = await listResp.json();
-          setQuestions(Array.isArray(data) ? data : []);
+          const normalized = (Array.isArray(data) ? data : []).map(r => ({ ...(r || {}), htmlAnswer: r && r.answer ? textToHtml(r.answer) : '' }));
+          cachedInterviewQuestions = normalized;
+          setQuestions(normalized);
         } else {
-          setQuestions(prev => prev.filter(q => q.id !== pendingDeleteId));
+          const next = questions.filter(q => q.id !== pendingDeleteId);
+          cachedInterviewQuestions = next;
+          setQuestions(next);
         }
       } catch (e) {
-        setQuestions(prev => prev.filter(q => q.id !== pendingDeleteId));
+        const next = questions.filter(q => q.id !== pendingDeleteId);
+        cachedInterviewQuestions = next;
+        setQuestions(next);
       }
       setExpandedQuestions(prev => { const updated = { ...prev }; delete updated[pendingDeleteId]; return updated; });
       setPendingDeleteId(null);
@@ -179,10 +203,11 @@ export function InterviewQuestions() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      
         <div className="mb-6">
-          <h2 className="text-xl font-semibold">Interview Questions and Answers</h2>
-          <div className="mb-6 px-6">
+          <h2 className="text-2xl font-bold text-gray-900">Interview Questions and Answers</h2>
+          <br></br>
+          <div className="mb-6 px-6 mt-4">
             <div className="flex items-center space-x-2">
               <div className="relative w-full md:w-3/4 min-w-0">
                 <input
@@ -212,7 +237,7 @@ export function InterviewQuestions() {
 
         {filteredQuestions.length > 0 && (
           <div className="mb-4 flex justify-between items-center">
-            <div className="text-sm text-gray-600">Showing {filteredQuestions.length} question{filteredQuestions.length !== 1 ? 's' : ''}</div>
+            <div className="text-md font-semibold text-gray-600">Showing {filteredQuestions.length} question{filteredQuestions.length !== 1 ? 's' : ''}</div>
             <div className="flex space-x-2"><button onClick={expandAll} className="cursor-pointer text-sm text-blue-600 hover:text-blue-800">Expand All</button><span className="text-gray-300">|</span><button onClick={collapseAll} className="cursor-pointer text-sm text-blue-600 hover:text-blue-800">Collapse All</button></div>
           </div>
         )}
@@ -248,7 +273,7 @@ export function InterviewQuestions() {
 
                       {expandedQuestions[question.id] && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="bg-white px-4 py-4 border-t border-gray-200 rounded-b-lg">
-                          <div className="text-gray-700" dangerouslySetInnerHTML={{ __html: textToHtml(question.answer) }} />
+                          <div className="text-gray-700" dangerouslySetInnerHTML={{ __html: question.htmlAnswer || textToHtml(question.answer) }} />
                         </motion.div>
                       )}
                     </motion.div>
@@ -258,7 +283,6 @@ export function InterviewQuestions() {
             ))}
           </div>
         )}
-      </div>
 
       {showAddForm && (
         <div className="fixed inset-0 flex items-center justify-center p-4 z-50 bg-black/10" style={{ backdropFilter: 'blur(6px)' }}>
