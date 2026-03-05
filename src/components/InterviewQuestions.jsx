@@ -6,6 +6,7 @@ import { motion } from 'motion/react';
 const categories = [
   'Architecture',
   'Behavioral',
+  'Change Management',
   'Communication',
   'Company Culture',
   'General',
@@ -132,9 +133,21 @@ export function InterviewQuestions() {
     // Persist to backend
     (async () => {
       try {
+        // Build an explicit payload to avoid accidental missing fields
+        const payload = {
+          question: newQuestion.question,
+          answer: newQuestion.answer,
+          category: newQuestion.category,
+          company: newQuestion.company,
+        };
+
         if (editingId) {
-          const resp = await fetch(`/api/interview-questions/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newQuestion) });
-          if (!resp.ok) throw new Error('Failed to update');
+          const resp = await fetch(`/api/interview-questions/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if (!resp.ok) {
+            let body = '';
+            try { body = await resp.text(); } catch (e) { /* ignore */ }
+            throw new Error(body || `Failed to update (${resp.status})`);
+          }
           const updated = await resp.json();
           updated.htmlAnswer = updated.answer ? textToHtml(updated.answer) : '';
           const next = questions.map(q => q.id === editingId ? updated : q);
@@ -142,19 +155,23 @@ export function InterviewQuestions() {
           setQuestions(next);
           setEditingId(null);
         } else {
-          const resp = await fetch('/api/interview-questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newQuestion) });
-          if (!resp.ok) throw new Error('Failed to create');
+          const resp = await fetch('/api/interview-questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if (!resp.ok) {
+            let body = '';
+            try { body = await resp.text(); } catch (e) { /* ignore */ }
+            throw new Error(body || `Failed to create (${resp.status})`);
+          }
           const created = await resp.json();
           created.htmlAnswer = created.answer ? textToHtml(created.answer) : '';
           const next = [created, ...questions];
           cachedInterviewQuestions = next;
           setQuestions(next);
         }
-          setNewQuestion({ question: '', answer: '', category: categories[0], company: '' });
+        setNewQuestion({ question: '', answer: '', category: categories[0], company: '' });
         setShowAddForm(false);
       } catch (err) {
         console.error('Save failed', err);
-        alert('Failed to save question');
+        alert('Failed to save question: ' + (err && err.message ? err.message : 'unknown error'));
       }
     })();
   };
