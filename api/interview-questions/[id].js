@@ -2,7 +2,7 @@ const db = require('../db');
 
 async function getQuestion(req, res, id) {
   try {
-    const result = await db.query('SELECT id, question, answer, category, company, created_at, updated_at FROM interview_questions WHERE id = $1 LIMIT 1', [id]);
+    const result = await db.query('SELECT id, question, answer, category, company, role, created_at, updated_at FROM interview_questions WHERE id = $1 LIMIT 1', [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -14,11 +14,11 @@ async function getQuestion(req, res, id) {
 async function updateQuestion(req, res, id) {
   try {
     const body = (req.body && typeof req.body === 'string') ? (function() { try { return JSON.parse(req.body); } catch (e) { return {}; } })() : (req.body || {});
-    const { question, answer, category, company } = body || {};
+    const { question, answer, category, company, role } = body || {};
     if (!question || !question.trim()) return res.status(400).json({ error: 'question is required' });
-    const params = [question.trim(), (answer || null), (category || null), (company || null), id];
+    const params = [question.trim(), (answer || null), (category || null), (company || null), (role || null), id];
     const result = await db.query(
-      `UPDATE interview_questions SET question = $1, answer = $2, category = $3, company = $4 WHERE id = $5 RETURNING id, question, answer, category, company, created_at, updated_at`,
+      `UPDATE interview_questions SET question = $1, answer = $2, category = $3, company = $4, role = $5 WHERE id = $6 RETURNING id, question, answer, category, company, role, created_at, updated_at`,
       params
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });

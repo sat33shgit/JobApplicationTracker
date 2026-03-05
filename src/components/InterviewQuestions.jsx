@@ -37,7 +37,7 @@ export function InterviewQuestions() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expandedQuestions, setExpandedQuestions] = useState({});
-  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: categories[0], company: '' });
+  const [newQuestion, setNewQuestion] = useState({ question: '', answer: '', category: categories[0], company: '', role: '' });
   const [errors, setErrors] = useState({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -52,7 +52,7 @@ export function InterviewQuestions() {
   }, []);
 
   const filteredQuestions = useMemo(() => questions.filter(q => {
-    const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''}`.toLowerCase();
+    const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''} ${q.role || ''}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
   }), [questions, searchTerm]);
 
@@ -139,6 +139,7 @@ export function InterviewQuestions() {
           answer: newQuestion.answer,
           category: newQuestion.category,
           company: newQuestion.company,
+          role: newQuestion.role,
         };
 
         if (editingId) {
@@ -167,7 +168,7 @@ export function InterviewQuestions() {
           cachedInterviewQuestions = next;
           setQuestions(next);
         }
-        setNewQuestion({ question: '', answer: '', category: categories[0], company: '' });
+        setNewQuestion({ question: '', answer: '', category: categories[0], company: '', role: '' });
         setShowAddForm(false);
       } catch (err) {
         console.error('Save failed', err);
@@ -179,14 +180,14 @@ export function InterviewQuestions() {
   const handleEdit = (id) => {
     const q = questions.find(x => x.id === id);
     if (!q) return;
-    setNewQuestion({ question: q.question, answer: q.answer, category: q.category, company: q.company || '' });
+    setNewQuestion({ question: q.question, answer: q.answer, category: q.category, company: q.company || '', role: q.role || '' });
     setEditingId(id);
     setShowAddForm(true);
   };
 
   const handleAddForCategory = (category) => {
     setEditingId(null);
-    setNewQuestion({ question: '', answer: '', category: category, company: '' });
+    setNewQuestion({ question: '', answer: '', category: category, company: '', role: '' });
     setShowAddForm(true);
   };
 
@@ -282,7 +283,7 @@ export function InterviewQuestions() {
               </button>
 
               <div>
-                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '', role: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
               </div>
             </div>
           </div>
@@ -319,23 +320,31 @@ export function InterviewQuestions() {
                         borderBottomRightRadius: expandedQuestions[question.id] ? '0px' : undefined,
                       }}
                     >
-                              <div
-                                className="bg-gray-50 rounded-t-lg overflow-hidden px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100"
-                                onClick={() => toggleQuestion(question.id)}
-                                style={{
-                                  borderTopLeftRadius: '0.5rem',
-                                  borderTopRightRadius: '0.5rem',
-                                  borderBottomLeftRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
-                                  borderBottomRightRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
-                                }}
-                              >
-                              <div className="flex items-center space-x-4 flex-1 pl-2">
-                                {expandedQuestions[question.id] ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/> : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>}
-                                <div className="min-w-0">
-                                  <div className="font-medium text-gray-900 truncate">{question.question}</div>
-                                  {question.company ? <div className="text-sm text-gray-500 truncate">{question.company}</div> : null}
-                                </div>
+                      <div
+                        className="bg-gray-50 rounded-t-lg overflow-hidden px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100"
+                        onClick={() => toggleQuestion(question.id)}
+                        style={{
+                          borderTopLeftRadius: '0.5rem',
+                          borderTopRightRadius: '0.5rem',
+                          borderBottomLeftRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
+                          borderBottomRightRadius: expandedQuestions[question.id] ? '0px' : '0.5rem',
+                        }}
+                      >
+                        <div className="flex items-center space-x-4 flex-1 pl-2">
+                          {expandedQuestions[question.id]
+                            ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>
+                            : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>
+                          }
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 truncate">{question.question}</div>
+                            {(question.company || question.role) ? (
+                              <div className="text-sm text-gray-500 truncate">
+                                {question.company ? question.company : ''}{question.role ? (question.company ? ` (${question.role})` : `(${question.role})`) : ''}
                               </div>
+                            ) : null}
+                          </div>
+                        </div>
+
                         <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => handleEdit(question.id)} className="cursor-pointer p-1 text-blue-600 hover:bg-blue-50 rounded" title="Edit question"><Edit className="h-4 w-4"/></button>
                           <button onClick={() => handleDelete(question.id)} className="cursor-pointer p-1 text-red-600 hover:bg-red-50 rounded" title="Delete question"><Trash2 className="h-4 w-4"/></button>
@@ -380,6 +389,11 @@ export function InterviewQuestions() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role (optional)</label>
+                  <input name="role" value={newQuestion.role} onChange={handleInputChange} placeholder="Role or job title (optional)" className="w-full border rounded-md px-3 py-2" />
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Question *</label>
                   <textarea name="question" value={newQuestion.question} onChange={handleInputChange} rows={3} placeholder="Enter your interview question..." className={`w-full border rounded-md px-3 py-2 ${errors.question ? 'border-red-500' : ''}`}/>
                   {errors.question && <p className="text-red-500 text-sm mt-1">{errors.question}</p>}
@@ -392,7 +406,7 @@ export function InterviewQuestions() {
                 </div>
 
                 <div className="flex justify-end pt-4 gap-6">
-                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
+                  <button type="button" onClick={() => { setShowAddForm(false); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '', role: '' }); setErrors({}); }} className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Cancel</button>
                   <button type="submit" className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">{editingId ? 'Update Question' : 'Add Question'}</button>
                 </div>
               </form>

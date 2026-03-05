@@ -85,7 +85,7 @@ async function createJob(req, res) {
     console.error('createJob error:', err && err.message);
     if (err && err.stack) console.error(err.stack);
     // include request body in non-production to aid debugging (do not leak in prod)
-    if (process.env.NODE_ENV !== 'production') console.error('createJob body:', req.body);
+    // Do not log request bodies in server logs; keep only the error message and stack above.
     res.status(500).json({ error: 'Failed to create job', detail: process.env.NODE_ENV === 'production' ? undefined : (err && err.message) });
   }
 }
