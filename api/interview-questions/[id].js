@@ -42,8 +42,10 @@ async function deleteQuestion(req, res, id) {
 module.exports = async function (req, res) {
   // derive id from URL (dev-server sets adapterReq.url to pathname)
   const parts = (req.url || '').split('/').filter(Boolean);
-  const idPart = parts[2];
-  const id = idPart ? Number(idPart) : null;
+  const idPart = parts[2] || '';
+  // Accept ids that may have extra suffixes (e.g. "90:1") by extracting leading digits
+  const m = String(idPart).match(/^(\d+)/);
+  const id = m ? Number(m[1]) : null;
   if (!id) return res.status(400).json({ error: 'id required' });
 
   if (req.method === 'GET') return getQuestion(req, res, id);
