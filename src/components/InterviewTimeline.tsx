@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Mail, User, FileText, ChevronRight, Building2, Clock, MessageSquare } from 'lucide-react';
+import { normalizeNewlines } from '../utils/text';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Parse a YYYY-MM-DD string into a local Date (avoids timezone shifts)
@@ -469,7 +470,8 @@ export function InterviewTimeline({ applications: _applications, companies: _com
                     <div className="mt-1">
                       <textarea
                         name="interviewNotes"
-                        value={String(selectedInterview?.otherDetails || selectedInterview?.statusHistory || '').replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
+                        value={normalizeNewlines(String(selectedInterview?.otherDetails || selectedInterview?.statusHistory || ''))
+                          .replace(/^\s*-{3,}\s*$/gm, '------------------------------------------')}
                         readOnly
                         rows={6}
                         wrap="soft"

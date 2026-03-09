@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom';
 import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp } from 'lucide-react';
 import { motion } from 'motion/react';
+import { normalizeNewlines } from '../utils/text';
 
 const categories = [
   'Architecture',
@@ -105,6 +106,8 @@ export function InterviewQuestions() {
     // Escape HTML
     const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     let s = String(raw || '');
+    // Normalize newlines (CRLF, CR, and unicode separators -> LF)
+    s = normalizeNewlines(s);
     s = escapeHtml(s);
 
     // Bold: **text**
@@ -332,8 +335,8 @@ export function InterviewQuestions() {
                       >
                         <div className="flex items-center space-x-4 flex-1 pl-2">
                           {expandedQuestions[question.id]
-                            ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>
-                            : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1"/>
+                            ? <ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1 chevron-fixed" />
+                            : <ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1 chevron-fixed" />
                           }
                           <div className="min-w-0">
                             <div className="font-medium text-gray-900 truncate">{question.question}</div>
@@ -354,6 +357,7 @@ export function InterviewQuestions() {
                       {expandedQuestions[question.id] && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="bg-white px-4 py-4 border-t border-gray-200 rounded-b-lg">
                           <div className="text-gray-700" dangerouslySetInnerHTML={{ __html: question.htmlAnswer || textToHtml(question.answer) }} />
+                          
                         </motion.div>
                       )}
                     </motion.div>

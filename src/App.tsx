@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { normalizeDateToInput, getTodayISO } from './utils/date';
 import { motion } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from "recharts";
+import { normalizeNewlines } from './utils/text';
 import { Upload, Plus, Search, Calendar, FileText, ChevronDown, ChevronUp, X, Edit, Trash2, FileSpreadsheet, ChevronRight, Eye } from "lucide-react";
 import { Button } from './components/ui/button';
 import * as XLSX from 'xlsx';
@@ -2932,7 +2933,7 @@ export default function App() {
                       <textarea
                         name="notes"
                         placeholder="e.g., applied via LinkedIn"
-                        value={newApplication.notes}
+                        value={normalizeNewlines(String(newApplication.notes || ''))}
                         onChange={handleInputChange}
                         readOnly={formDisabled}
                         className={`w-full border rounded-md px-3 py-2 h-24 ${formDisabled ? 'bg-gray-50 text-gray-700' : ''}`}

@@ -43,6 +43,17 @@ module.exports = async function (req, res) {
       const newStatus = ('status' in fields) ? fields.status : prevStatus;
       const statusChanged = existing && prevStatus && String(prevStatus) !== String(newStatus);
 
+      // If incoming status is one of these key statuses, ensure the job is tracked ('t').
+      // Do not modify `track` for other statuses; leave existing value untouched.
+      if ('status' in fields) {
+        const norm = String(fields.status || '').trim().toLowerCase();
+        const trackedStatuses = ['prelimnary call', 'interview', 'offer', 'rejected'];
+        if (trackedStatuses.includes(norm)) {
+          sets.push(`track=$${idx++}`);
+          values.push('t');
+        }
+      }
+
       // Check if notes changed
       const existingNoteText = (existing && existing.metadata && existing.metadata.notes) || '';
       const newNoteText = (fields.metadata && fields.metadata.notes) || '';

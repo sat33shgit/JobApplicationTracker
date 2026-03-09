@@ -1197,6 +1197,34 @@ html {
   font-size: var(--font-size);
 }
 
+/* Ensure paragraphs inside elements that use Tailwind text color classes
+   receive sensible spacing and line-height. This fixes collapsed paragraphs
+   when base typography rules are not applied due to ancestor text-* classes. */
+.text-gray-700 p,
+.text-gray-900 p,
+.text-gray-600 p,
+.text-gray-500 p {
+  margin: 0 0 0.75rem 0;
+  line-height: 1.5;
+}
+
+.text-gray-700 br,
+.text-gray-900 br,
+.text-gray-600 br,
+.text-gray-500 br {
+  /* Ensure <br/> behaves as expected inside these text containers */
+  display: block;
+  margin: 0.25rem 0;
+}
+
+/* Fixed-size chevron icon used in question list to avoid collapsing when text wraps */
+.chevron-fixed {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  min-height: 1.25rem !important;
+}
+
 @property --tw-space-y-reverse {
   syntax: "*";
   inherits: false;
