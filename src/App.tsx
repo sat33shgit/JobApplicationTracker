@@ -965,11 +965,7 @@ export default function App() {
   const updateContactAt = useCallback((idx, field, value) => {
     setNewApplication(prev => {
       const contacts = [...(prev.contacts || [])];
-      let newVal = value;
-      if (field === 'phone') {
-        // allow digits only, strip other chars and limit to 10 digits
-        newVal = String(value || '').replace(/\D/g, '').slice(0, 10);
-      }
+        const newVal = field === 'phone' ? String(value || '') : value;
       contacts[idx] = { ...contacts[idx], [field]: newVal };
       return { ...prev, contacts };
     });
@@ -1038,26 +1034,21 @@ export default function App() {
       }
     }
 
-    // Contacts validation: contacts are optional. For any contact where the user entered data,
-    // require name and either phone or email.
+    // Contacts are optional. Skip fully empty rows and allow any subset of fields.
     const rawContacts = Array.isArray(newApplication.contacts) ? newApplication.contacts : [];
     const validContacts = [];
     for (const c of rawContacts) {
       const name = (c && c.name) ? String(c.name).trim() : '';
       const email = (c && c.email) ? String(c.email).trim() : '';
       let phone = (c && c.phone) ? String(c.phone).trim() : '';
-      // ensure phone contains only digits and is limited to 10 characters (input sanitizes but validate again)
+
       if (phone) {
-        if (!/^\d{1,10}$/.test(phone)) {
-          newErrors.contacts = 'Phone must be digits only and at most 10 characters';
+        if (!/^[\d+\s()\-]{1,25}$/.test(phone)) {
+          newErrors.contacts = 'Phone can include digits, spaces, +, parentheses, and hyphens only';
           break;
         }
       }
       if (!name && !email && !phone) continue; // skip empty row
-      if (!name || (!email && !phone)) {
-        newErrors.contacts = 'Each contact must include a name and at least an email or phone number';
-        break;
-      }
       validContacts.push({ name, email: email || null, phone: phone || null });
     }
     if (Object.keys(newErrors).length) {
