@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp } from 'lucide-react';
+import { Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import { normalizeNewlines } from '../utils/text';
 
@@ -26,6 +26,24 @@ const categories = [
   'Team Management',
 ];
 
+// Helpers moved out of component to reduce component size and make them reusable
+const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const textToHtml = (raw) => {
+  if (!raw && raw !== '') return '';
+  let s = String(raw || '');
+  s = normalizeNewlines(s);
+  s = escapeHtml(s);
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|\s)\*(.+?)\*(?=\s|$)/g, (m, p1, p2) => `${p1}<em>${p2}</em>`);
+  s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
+  const paragraphs = s.split(/\n{2,}/g).map(para => {
+    const p = para.replace(/\n/g, '<br/>');
+    return `<p>${p}</p>`;
+  });
+  return paragraphs.join('\n');
+};
+
 // We'll load interview questions from the backend table `interview_questions` instead
 
 // Simple in-memory cache to avoid refetching interview questions on repeated mounts
@@ -33,7 +51,6 @@ let cachedInterviewQuestions = null;
 
 export function InterviewQuestions() {
   const [questions, setQuestions] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -46,16 +63,24 @@ export function InterviewQuestions() {
   const [showToast, setShowToast] = useState(false);
   const toastTimerRef = useRef(null);
 
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
+
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
+  const availableCategories = useMemo(() => Array.from(new Set((questions || []).map(q => q.category).filter(Boolean))).sort(), [questions]);
+  const availableCompanies = useMemo(() => Array.from(new Set((questions || []).map(q => (q.company || '').trim()).filter(Boolean))).sort(), [questions]);
+
   const filteredQuestions = useMemo(() => questions.filter(q => {
+    if (categoryFilter && q.category !== categoryFilter) return false;
+    if (companyFilter && ((q.company || '').trim() !== companyFilter)) return false;
     const searchString = `${q.question} ${q.answer} ${q.category} ${q.company || ''} ${q.role || ''}`.toLowerCase();
     return searchString.includes(searchTerm.toLowerCase());
-  }), [questions, searchTerm]);
+  }), [questions, searchTerm, categoryFilter, companyFilter]);
 
   useEffect(() => {
     let mounted = true;
@@ -247,10 +272,8 @@ export function InterviewQuestions() {
       setShowBackToTop(scrolled >= window.innerHeight);
     };
     window.addEventListener('scroll', onScroll, { passive: true });
-    document.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       window.removeEventListener('scroll', onScroll);
-      document.removeEventListener('scroll', onScroll);
     };
   }, []);
   const scrollToTop = useCallback(() => {
@@ -262,31 +285,51 @@ export function InterviewQuestions() {
     <div className="space-y-6">
       
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Interview Questions and Answers</h2>
-          <br></br>
-          <div className="mb-6 px-6 mt-4">
-            <div className="flex items-center space-x-2">
-              <div className="relative w-full md:w-3/4 min-w-0">
+          <div className="flex items-center justify-between pb-4">
+            <h2 className="text-2xl font-bold text-gray-900">Interview Questions and Answers</h2>
+            <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '', role: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+          </div>
+          <div className="mb-6 px-6">
+            <div className="grid items-end gap-6 grid-cols-[2fr_auto_auto]">
+              <div className="min-w-0">
+                <label className="block text-sm text-gray-700 mb-1">Search</label>
                 <input
                   type="text"
                   placeholder="Search questions and answers..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border rounded-md w-full"
+                  className="px-4 py-2 border rounded-md w-full"
                 />
-                <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
               </div>
 
-              <button
-                onClick={() => setSearchTerm('')}
-                className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
-                aria-label="Clear search"
-              >
-                Clear
-              </button>
+              <div className="min-w-0">
+                <div className="flex gap-6">
+                  <div className="w-56">
+                    <label className="block text-sm text-gray-700 mb-1">Category</label>
+                    <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="w-full border rounded-md px-3 py-2">
+                      <option value="">All categories</option>
+                      {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
 
-              <div>
-                <button onClick={() => { setShowAddForm(true); setEditingId(null); setNewQuestion({ question: '', answer: '', category: categories[0], company: '', role: '' }); }} className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"><Plus className="h-5 w-5" /><span>Add Question</span></button>
+                  <div className="w-56">
+                    <label className="block text-sm text-gray-700 mb-1">Company</label>
+                    <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} className="w-full border rounded-md px-3 py-2">
+                      <option value="">All companies</option>
+                      {availableCompanies.map(co => <option key={co} value={co}>{co}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-shrink-0 justify-self-end">
+                <button
+                  onClick={() => { setSearchTerm(''); setCategoryFilter(''); setCompanyFilter(''); }}
+                  className="text-sm px-4 py-2 h-[42px] bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer whitespace-nowrap"
+                  aria-label="Clear search and filters"
+                >
+                  Clear
+                </button>
               </div>
             </div>
           </div>

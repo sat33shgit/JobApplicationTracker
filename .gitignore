@@ -16,3 +16,7 @@ coverage/
 /.vercel
 node_modules/node_modules
 .vercel
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
