@@ -1945,7 +1945,7 @@ export default function App() {
                   </div>
                   
                   {/* Date Range Filter */}
-                  <div className="flex flex-col px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex flex-col gap-8 px-6 py-4 bg-gray-50 rounded-lg border border-gray-200">
                     {/* First row: Date inputs, Status, Clear */}
                     <div className="flex flex-wrap items-center gap-4 w-full">
                       <div className="flex items-center gap-1.5 mr-2">
@@ -2023,41 +2023,44 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="border-l border-gray-300 h-8 ml-3 mr-1"></div>
+                      <div className="border-l border-gray-300 h-8 ml-3 mr-1 shrink-0"></div>
 
-                      <div className="flex items-center gap-2 mr-3">
-                        <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Status:</label>
-                        <select
-                          value={selectedStatus}
-                          onChange={(e) => setSelectedStatus(e.target.value)}
-                          className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[130px]"
-                        >
-                          <option value="">All Statuses</option>
-                          {statusOptions.map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <button
-                        onClick={clearDateRange}
-                        disabled={!(filterStartDate || filterEndDate || selectedStatus)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg border border-gray-200 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <X className="h-4 w-4" />
-                        <span>Clear</span>
-                      </button>
-
-                      {selectedTimeframe === 'daily' && (
-                        <div className="text-sm text-gray-500 whitespace-nowrap ml-auto">
-                          <span className="font-medium">Max:</span> 30 days
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-6">
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Status:</label>
+                          <select
+                            value={selectedStatus}
+                            onChange={(e) => setSelectedStatus(e.target.value)}
+                            className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[130px]"
+                          >
+                            <option value="">All Statuses</option>
+                            {statusOptions.map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
                         </div>
-                      )}
+
+                        <button
+                          type="button"
+                          onClick={clearDateRange}
+                          disabled={!(filterStartDate || filterEndDate || selectedStatus)}
+                          className="flex shrink-0 items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg border border-gray-200 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <X className="h-4 w-4" />
+                          <span>Clear</span>
+                        </button>
+
+                        {selectedTimeframe === 'daily' && (
+                          <div className="ml-auto text-sm text-gray-500 whitespace-nowrap">
+                            <span className="font-medium">Max:</span> 30 days
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Second row: Quick range buttons (Daily only) */}
                     {selectedTimeframe === 'daily' && (
-                      <div className="mt-8 pt-4 border-t border-gray-200 flex items-center gap-2 flex-wrap">
+                      <div className="border-t border-gray-200 pt-4 flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Quick range:</span>
                         <button
                           onClick={() => handleQuickRange(10)}
