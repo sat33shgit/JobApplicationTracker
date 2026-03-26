@@ -19,7 +19,7 @@ export default function SimpleModal({
 	descriptionId,
 	blur,
 }: SimpleModalProps) {
-	const containerRef = useRef<HTMLDivElement | null>(null);
+	const containerRef = useRef<HTMLDialogElement | null>(null);
 
 	useEffect(() => {
 		if (!open) return;
@@ -35,7 +35,9 @@ export default function SimpleModal({
 	if (!open) return null;
 	return createPortal(
 		<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
-			<div
+			<button
+				type="button"
+				aria-label="Close modal"
 				className={
 					blur
 						? "absolute inset-0 bg-white/40 backdrop-blur-lg"
@@ -47,17 +49,21 @@ export default function SimpleModal({
 				onClick={onClose}
 			/>
 			<div className="relative w-full max-w-2xl mx-auto pointer-events-auto">
-				<div
+				<dialog
 					ref={containerRef}
-					role="dialog"
+					open
 					aria-modal="true"
 					aria-labelledby={titleId}
 					aria-describedby={descriptionId}
 					tabIndex={-1}
-					className="bg-white rounded-lg shadow-xl w-full p-6 max-h-[80vh] overflow-visible"
+					onCancel={(event) => {
+						event.preventDefault();
+						onClose();
+					}}
+					className="bg-white rounded-lg shadow-xl w-full p-6 max-h-[80vh] overflow-visible m-0"
 				>
 					{children}
-				</div>
+				</dialog>
 			</div>
 		</div>,
 		typeof document !== "undefined" ? document.body : null,

@@ -1,30 +1,106 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { Calendar, Mail, User, ChevronRight, Building2, MessageSquare } from "lucide-react";
 import {
-	Calendar,
-	Mail,
-	User,
-	FileText,
-	ChevronRight,
-	Building2,
-	Clock,
-	MessageSquare,
-} from "lucide-react";
+	BarChart,
+	Bar,
+	XAxis,
+	YAxis,
+	CartesianGrid,
+	Tooltip,
+	ResponsiveContainer,
+	PieChart,
+	Pie,
+	Cell,
+	Legend,
+	LabelList,
+} from "recharts";
 import { normalizeNewlines } from "../utils/text";
 import { motion, AnimatePresence } from "motion/react";
 
-// Parse a YYYY-MM-DD string into a local Date (avoids timezone shifts)
-const parseLocalYMD = (s?: string) => {
-	if (!s) return null;
-	const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-	if (m) {
-		const y = parseInt(m[1], 10);
-		const mo = parseInt(m[2], 10) - 1;
-		const d = parseInt(m[3], 10);
-		return new Date(y, mo, d);
+type ContactInfo = {
+	name: string;
+	email: string;
+};
+
+type ContactLike = {
+	name?: string | null;
+	email?: string | null;
+};
+
+type Company = {
+	id: number;
+	name: string;
+};
+
+type SourceApplication = {
+	id: number;
+	companyName?: string | null;
+	company?: string | null;
+	companyId?: number | null;
+	role?: string | null;
+	title?: string | null;
+	dateApplied?: string | null;
+	applied_date?: string | null;
+	dateAppliedTs?: number | null;
+	interviewDate?: string | null;
+	interview_date?: string | null;
+	dateOfInterview?: string | null;
+	contacts?: Array<ContactLike | null> | null;
+	metadata?: { contacts?: Array<ContactLike | null> | null } | null;
+	status?: unknown;
+	statusNotes?: string | null;
+	status_notes?: string | null;
+	notes?: string | null;
+	track?: unknown;
+};
+
+type InterviewRecord = {
+	id: number;
+	companyName: string;
+	role: string;
+	submissionDate: string;
+	submissionTs: number;
+	interviewDate: string;
+	contacts: ContactInfo[];
+	status: string;
+	statusHistory: string;
+	hrPerson: ContactInfo;
+};
+
+type PieLabelProps = {
+	cx: number;
+	cy: number;
+	midAngle: number;
+	outerRadius: number;
+	percent?: number;
+	index: number;
+};
+
+type BarLabelProps = {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	value: number | string;
+};
+
+type SortKey = "companyName" | "role" | "interviewDate" | "submissionDate" | "status";
+
+const emptyContact: ContactInfo = { name: "", email: "" };
+
+const parseLocalYMD = (value?: string) => {
+	if (!value) return null;
+
+	const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+	if (match) {
+		const year = Number.parseInt(match[1], 10);
+		const month = Number.parseInt(match[2], 10) - 1;
+		const day = Number.parseInt(match[3], 10);
+		return new Date(year, month, day);
 	}
-	// fallback to Date constructor for other formats
-	const dt = new Date(s);
-	return Number.isNaN(dt.getTime()) ? null : dt;
+
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const formatDisplayDate = (isoDate: string) => {
@@ -42,123 +118,257 @@ const getMonthYear = (isoDate: string) => {
 	return `${month} ${year}`;
 };
 
+const statusOptions = [
+	"Applied",
+	"System Rejected",
+	"AI Interview",
+	"Email Enquiry",
+	"Preliminary Call",
+	"Interview",
+	"Offer",
+	"Rejected",
+	"Withdrawn",
+	"Paused",
+	"No Update",
+	"Closed",
+];
+
+const chartColors = [
+	"#0088FE",
+	"#687530",
+	"#783330",
+	"#F39C12",
+	"#397D58",
+	"#00C49F",
+	"#FFBB28",
+	"#F38042",
+	"#8884d8",
+	"#D35400",
+	"#e0AEC0",
+	"#6B7280",
+];
+
+const getTextValue = (value: unknown) => (typeof value === "string" ? value : "");
+
+const normalizeToIsoDate = (value: unknown) => {
+	const raw = getTextValue(value).trim();
+	if (!raw) return "";
+	if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+
+	const parsed = new Date(raw);
+	return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+};
+
+const normalizeContacts = (
+	contacts: Array<ContactLike | null> | null | undefined,
+): ContactInfo[] => {
+	if (!Array.isArray(contacts)) return [];
+
+	return contacts.filter(Boolean).map((contact) => ({
+		name: getTextValue(contact?.name),
+		email: getTextValue(contact?.email),
+	}));
+};
+
+const isTrackedApplication = (trackValue: unknown) =>
+	trackValue === "t" ||
+	trackValue === "T" ||
+	trackValue === true ||
+	(typeof trackValue === "string" && trackValue.toLowerCase() === "true");
+
+const formatSourceStatus = (status: unknown) => {
+	const raw = getTextValue(status).trim();
+	if (!raw) return "Applied";
+	return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const getDateSource = (item: InterviewRecord) => item.submissionDate || item.interviewDate || "";
+
+const isCompletedStatus = (status: string) => status.toLowerCase() === "completed";
+
+const isScheduledStatus = (status: string) => status.toLowerCase().includes("sched");
+
+const getStatusBadgeClass = (status: string) => {
+	if (isCompletedStatus(status)) return "bg-green-100 text-green-700";
+	if (isScheduledStatus(status)) return "bg-blue-100 text-blue-700";
+	return "bg-yellow-100 text-yellow-700";
+};
+
+const toInterviewRecord = (
+	record: SourceApplication,
+	companiesMap: Map<number, string>,
+): InterviewRecord => {
+	const submissionDate = normalizeToIsoDate(record.dateApplied ?? record.applied_date);
+	const parsedSubmissionDate = submissionDate ? parseLocalYMD(submissionDate) : null;
+	const contacts = normalizeContacts(record.contacts ?? record.metadata?.contacts);
+	const companyId = typeof record.companyId === "number" ? record.companyId : undefined;
+
+	return {
+		id: record.id,
+		companyName:
+			getTextValue(record.companyName).trim() ||
+			getTextValue(record.company).trim() ||
+			(companyId ? companiesMap.get(companyId) : undefined) ||
+			"Unknown",
+		role: getTextValue(record.role).trim() || getTextValue(record.title).trim(),
+		submissionDate,
+		submissionTs:
+			typeof record.dateAppliedTs === "number"
+				? record.dateAppliedTs
+				: parsedSubmissionDate
+					? parsedSubmissionDate.getTime()
+					: 0,
+		interviewDate: normalizeToIsoDate(
+			record.interviewDate ?? record.interview_date ?? record.dateOfInterview,
+		),
+		contacts,
+		status: formatSourceStatus(record.status),
+		statusHistory:
+			getTextValue(record.statusNotes).trim() ||
+			getTextValue(record.status_notes).trim() ||
+			getTextValue(record.notes).trim(),
+		hrPerson: contacts[0] ?? emptyContact,
+	};
+};
+
+const renderPieLabel = (props: PieLabelProps) => {
+	const { cx, cy, midAngle, outerRadius, percent, index } = props;
+	const rad = Math.PI / 180;
+	const pct = Math.round((percent || 0) * 100);
+	if (pct === 0) return null;
+
+	let extra = 18;
+	if (pct <= 2) extra += 20;
+	else if (pct <= 5) extra += 12;
+
+	const radius = outerRadius + extra;
+	const xBase = cx + radius * Math.cos(-midAngle * rad);
+	const yBase = cy + radius * Math.sin(-midAngle * rad);
+	const stagger = pct <= 5 ? (index % 2 === 0 ? -8 : 8) : 0;
+	const x = xBase;
+	const y = yBase + stagger;
+	const fill = chartColors[index % chartColors.length] || "#333";
+
+	return (
+		<text
+			x={x}
+			y={y}
+			fill={fill}
+			fontSize={12}
+			textAnchor={x > cx ? "start" : "end"}
+			dominantBaseline="central"
+		>
+			{pct}%
+		</text>
+	);
+};
+
+const renderBarLabel = (props: BarLabelProps) => {
+	const { x, y, width, height, value } = props;
+	const cx = x + width / 2;
+	const fontSize = 14;
+
+	if ((height || 0) < 18) {
+		return (
+			<text
+				x={cx}
+				y={y - 6}
+				fill="#111827"
+				fontSize={fontSize}
+				fontWeight={700}
+				textAnchor="middle"
+			>
+				{value}
+			</text>
+		);
+	}
+
+	return (
+		<text
+			x={cx}
+			y={y + height / 2}
+			fill="#ffffff"
+			fontSize={fontSize}
+			fontWeight={700}
+			textAnchor="middle"
+			dominantBaseline="central"
+		>
+			{value}
+		</text>
+	);
+};
+
+const toLocalDateKey = (date: Date) => {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+};
+
+const toCanonicalStatus = (value: unknown) => {
+	const raw = String(value || "").trim();
+	if (!raw) return "No Update";
+
+	const exactMatch = statusOptions.find((status) => status.toLowerCase() === raw.toLowerCase());
+	if (exactMatch) return exactMatch;
+
+	return raw
+		.toLowerCase()
+		.split(/[\s_-]+/)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
+};
+
+const getStatusColor = (statusName: string) => {
+	const colorIndex = statusOptions.indexOf(statusName);
+	return colorIndex >= 0 ? chartColors[colorIndex % chartColors.length] : "#6B7280";
+};
+
 export function InterviewTimeline({
 	applications: _applications,
 	companies: _companies,
 	onViewApplication,
 }: {
-	applications?: any[];
-	companies?: { id: number; name: string }[];
+	applications?: SourceApplication[];
+	companies?: Company[];
 	onViewApplication?: (id: number) => void;
 }) {
-	// Ignore `applications` prop for the interviews page and always fetch tracked jobs (track === 't').
-	// Start with mock data until the tracked jobs are loaded.
-	// start with empty list; we'll populate from the API
-	const [data, setData] = useState<any[]>([]);
-	const [selectedInterview, setSelectedInterview] = useState<any | null>(null);
+	const [data, setData] = useState<InterviewRecord[]>([]);
+	const [selectedInterview, setSelectedInterview] = useState<InterviewRecord | null>(null);
 
-	// Prefer using preloaded `applications` prop when available to avoid an extra API round-trip.
 	useEffect(() => {
 		let mounted = true;
 
+		const updateInterviewState = (records: InterviewRecord[]) => {
+			if (!mounted) return;
+			setData(records);
+			setSelectedInterview(records[0] ?? null);
+		};
+
 		const buildFromProps = () => {
 			if (!Array.isArray(_applications) || _applications.length === 0) return false;
-			// Only use applications explicitly marked as tracked (track === 't')
-			const src = (_applications || []).filter((r: any) => {
-				if (!r) return false;
-				const v = r.track;
-				return (
-					v === "t" ||
-					v === "T" ||
-					v === true ||
-					(typeof v === "string" && v.toLowerCase() === "true")
-				);
-			});
 			const companiesMap = new Map<number, string>();
-			(_companies || []).forEach((c) => {
-				if (c && typeof c.id === "number") companiesMap.set(c.id, c.name);
-			});
-
-			const mapped = src.map((r: any) => {
-				const applied = r.dateApplied || r.applied_date || "";
-				const appliedIso = applied ? new Date(applied).toISOString().slice(0, 10) : "";
-				return {
-					id: r.id,
-					companyName:
-						r.companyName ||
-						r.company ||
-						(r.companyId ? companiesMap.get(r.companyId) : undefined) ||
-						"Unknown",
-					role: r.role || r.title || "",
-					submissionDate: appliedIso,
-					submissionTs:
-						r.dateAppliedTs ||
-						(appliedIso ? (parseLocalYMD(appliedIso) || new Date(appliedIso)).getTime() : 0),
-					interviewDate: r.interviewDate || r.interview_date || r.dateOfInterview || "",
-					contacts: r.contacts || r.metadata?.contacts || [],
-					status:
-						typeof r.status === "string"
-							? r.status.charAt(0).toUpperCase() + r.status.slice(1)
-							: r.status || "Applied",
-					statusHistory: r.statusNotes || r.status_notes || r.notes || "",
-					hrPerson: (r.contacts && r.contacts[0]) || { name: "", email: "" },
-				};
-			});
-
-			if (mounted) {
-				if (mapped.length > 0) {
-					setData(mapped);
-					setSelectedInterview(mapped[0]);
-				} else {
-					setData([]);
-					setSelectedInterview(null);
-				}
+			for (const company of _companies ?? []) {
+				companiesMap.set(company.id, company.name);
 			}
+
+			const mapped = _applications
+				.filter((record) => isTrackedApplication(record.track))
+				.map((record) => toInterviewRecord(record, companiesMap));
+
+			updateInterviewState(mapped);
 			return true;
 		};
 
 		if (!buildFromProps()) {
-			// Fallback: load jobs directly and keep only rows where `track === 't'` (string 't').
 			async function loadTrackedJobs() {
 				try {
 					const resp = await fetch("/api/jobs");
 					if (!resp.ok) return;
-					const rows = await resp.json();
-					const filtered = rows.filter((r: any) => {
-						if (!r) return false;
-						// Accept string 't', boolean true, or string 'true' (case-insensitive)
-						const v = r.track;
-						return (
-							v === "t" ||
-							v === "T" ||
-							v === true ||
-							(typeof v === "string" && v.toLowerCase() === "true")
-						);
-					});
-					const mapped = filtered.map((r: any) => {
-						const applied = r.applied_date || r.dateApplied || "";
-						const appliedIso = applied ? new Date(applied).toISOString().slice(0, 10) : "";
-						return {
-							id: r.id,
-							companyName: r.company || "Unknown",
-							role: r.title || r.role || "",
-							submissionDate: appliedIso,
-							submissionTs:
-								r.dateAppliedTs || (parseLocalYMD(appliedIso) || new Date(appliedIso)).getTime(),
-							interviewDate: r.interview_date
-								? r.interview_date.slice
-									? r.interview_date.slice(0, 10)
-									: r.interview_date
-								: r.dateOfInterview || "",
-							contacts: r.contacts || r.metadata?.contacts || [],
-							status:
-								typeof r.status === "string"
-									? r.status.charAt(0).toUpperCase() + r.status.slice(1)
-									: r.status || "Applied",
-							statusHistory: r.status_notes || r.statusNotes || "",
-							hrPerson: (r.contacts && r.contacts[0]) || { name: "", email: "" },
-						};
-					});
+					const rows = (await resp.json()) as SourceApplication[];
+					const mapped = rows
+						.filter((record) => isTrackedApplication(record.track))
+						.map((record) => toInterviewRecord(record, new Map<number, string>()));
 					if (mounted) {
 						if (mapped.length > 0) {
 							setData(mapped);
@@ -169,9 +379,7 @@ export function InterviewTimeline({
 							setSelectedInterview(null);
 						}
 					}
-				} catch (e) {
-					// ignore errors and keep mock data
-				}
+				} catch {}
 			}
 			loadTrackedJobs();
 		}
@@ -179,85 +387,141 @@ export function InterviewTimeline({
 		return () => {
 			mounted = false;
 		};
-		// Rebuild when props change
 	}, [_applications, _companies]);
 	const [viewMode, setViewMode] = useState<"timeline" | "list">("timeline");
 
-	// List view sorting state
-	const [sortKey, setSortKey] = useState<
-		"companyName" | "role" | "interviewDate" | "submissionDate" | "status"
-	>("submissionDate");
+	const chartStats = useMemo(() => {
+		const dateCounts = new Map<string, { label: string; count: number; ts: number }>();
+		const knownStatusCounts = new Map<string, number>(statusOptions.map((status) => [status, 0]));
+		const extraStatusCounts = new Map<string, number>();
+
+		for (const item of data) {
+			const dateSource = getDateSource(item);
+			const parsedDate = parseLocalYMD(dateSource);
+			if (parsedDate) {
+				const key = toLocalDateKey(parsedDate);
+				const existing = dateCounts.get(key);
+				if (existing) {
+					existing.count += 1;
+				} else {
+					dateCounts.set(key, {
+						label: formatDisplayDate(key),
+						count: 1,
+						ts: parsedDate.getTime(),
+					});
+				}
+			}
+
+			const statusName = toCanonicalStatus(item.status);
+			if (knownStatusCounts.has(statusName)) {
+				knownStatusCounts.set(statusName, (knownStatusCounts.get(statusName) || 0) + 1);
+			} else {
+				extraStatusCounts.set(statusName, (extraStatusCounts.get(statusName) || 0) + 1);
+			}
+		}
+
+		const timelineData = Array.from(dateCounts.values()).sort((a, b) => a.ts - b.ts);
+		const visibleStatusData = [
+			...statusOptions.map((status) => ({
+				name: status,
+				value: knownStatusCounts.get(status) || 0,
+			})),
+			...Array.from(extraStatusCounts.entries()).map(([name, value]) => ({ name, value })),
+		].filter((entry) => entry.value > 0);
+		const statusTotal = visibleStatusData.reduce((sum, entry) => sum + entry.value, 0);
+
+		return {
+			statusTotal,
+			timelineData,
+			visibleStatusData,
+		};
+	}, [data]);
+
+	const [sortKey, setSortKey] = useState<SortKey>("submissionDate");
 	const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-	const toggleSort = (key: typeof sortKey) => {
+	const toggleSort = (key: SortKey) => {
 		if (sortKey === key) {
-			setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+			setSortDir((direction) => (direction === "asc" ? "desc" : "asc"));
 		} else {
 			setSortKey(key);
 			setSortDir("desc");
 		}
 	};
 
-	const appsSorted = data.slice().sort((a, b) => {
-		const getVal = (item: any) => {
+	const appsSorted = useMemo(() => {
+		const getValue = (item: InterviewRecord): number | string => {
 			switch (sortKey) {
 				case "companyName":
-					return String(item.companyName || "").toLowerCase();
+					return item.companyName.toLowerCase();
 				case "role":
-					return String(item.role || "").toLowerCase();
+					return item.role.toLowerCase();
 				case "interviewDate":
 					return parseLocalYMD(item.interviewDate)?.getTime() || 0;
 				case "submissionDate":
-					return (
-						Number(item.submissionTs || 0) || parseLocalYMD(item.submissionDate)?.getTime() || 0
-					);
+					return item.submissionTs || parseLocalYMD(item.submissionDate)?.getTime() || 0;
 				case "status":
-					return String(item.status || "").toLowerCase();
+					return item.status.toLowerCase();
 				default:
 					return "";
 			}
 		};
 
-		const va = getVal(a);
-		const vb = getVal(b);
-		let cmp = 0;
-		if (typeof va === "number" && typeof vb === "number") cmp = (va as number) - (vb as number);
-		else cmp = String(va).localeCompare(String(vb));
-		return sortDir === "asc" ? cmp : -cmp;
-	});
+		return [...data].sort((a, b) => {
+			const aValue = getValue(a);
+			const bValue = getValue(b);
 
-	// (removed unused grouping and related-interviews helpers during cleanup)
+			if (typeof aValue === "number" && typeof bValue === "number") {
+				return sortDir === "asc" ? aValue - bValue : bValue - aValue;
+			}
 
-	// Group items by year for the timeline sidebar and track collapsed state per year
+			const compareResult = String(aValue).localeCompare(String(bValue));
+			return sortDir === "asc" ? compareResult : -compareResult;
+		});
+	}, [data, sortDir, sortKey]);
+
 	const [collapsedYears, setCollapsedYears] = useState<Record<number, boolean>>({});
 
-	const groupsByYear = appsSorted.reduce((acc: Record<number, any[]>, item: any) => {
-		const dateSource = item.submissionDate || item.interviewDate || "";
-		const dt = dateSource
-			? parseLocalYMD(dateSource) || new Date(dateSource)
-			: new Date(item.submissionTs || Date.now());
-		const y = dt.getFullYear();
-		if (!acc[y]) acc[y] = [];
-		acc[y].push(item);
-		return acc;
-	}, {});
+	const groupsByYear = useMemo(() => {
+		const grouped: Record<number, InterviewRecord[]> = {};
 
-	const years = Object.keys(groupsByYear)
-		.map((s) => Number(s))
-		.sort((a, b) => b - a);
+		for (const item of appsSorted) {
+			const dateSource = getDateSource(item);
+			const preferredDate = dateSource
+				? (parseLocalYMD(dateSource) ?? new Date(dateSource))
+				: new Date(item.submissionTs || Date.now());
+			const resolvedDate = Number.isNaN(preferredDate.getTime())
+				? new Date(item.submissionTs || Date.now())
+				: preferredDate;
+			const year = resolvedDate.getFullYear();
 
-	// Initialize collapsed state when data changes: collapse all years except current year by default
+			if (!grouped[year]) grouped[year] = [];
+			grouped[year].push(item);
+		}
+
+		return grouped;
+	}, [appsSorted]);
+
+	const years = useMemo(
+		() =>
+			Object.keys(groupsByYear)
+				.map((value) => Number(value))
+				.sort((a, b) => b - a),
+		[groupsByYear],
+	);
+
 	useEffect(() => {
 		if (years.length === 0) return;
-		setCollapsedYears((prev) => {
-			const next = { ...prev } as Record<number, boolean>;
-			years.forEach((y) => {
-				if (!(y in next)) next[y] = y !== new Date().getFullYear();
-			});
+
+		const currentYear = new Date().getFullYear();
+		setCollapsedYears((previous) => {
+			const next = { ...previous };
+			for (const year of years) {
+				if (!(year in next)) next[year] = year !== currentYear;
+			}
 			return next;
 		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [data]);
+	}, [years]);
 
 	return (
 		<div className="space-y-6">
@@ -271,6 +535,7 @@ export function InterviewTimeline({
 				</div>
 				<div className="flex items-center gap-2">
 					<button
+						type="button"
 						onClick={() => setViewMode("timeline")}
 						className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-medium transition-all ${
 							viewMode === "timeline"
@@ -281,6 +546,7 @@ export function InterviewTimeline({
 						Timeline
 					</button>
 					<button
+						type="button"
 						onClick={() => setViewMode("list")}
 						className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-medium transition-all ${
 							viewMode === "list"
@@ -293,45 +559,75 @@ export function InterviewTimeline({
 				</div>
 			</div>
 
-			{/* Statistics Summary */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-					<div className="flex items-center justify-between">
-						<div>
-							<p className="text-sm font-medium text-gray-600 mb-1">Total Interviews</p>
-							<p className="text-3xl font-bold text-gray-900">{data.length}</p>
-						</div>
-						<div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-							<Calendar className="w-6 h-6 text-blue-600" />
-						</div>
+			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+				<div className="lg:col-span-2 bg-white rounded-lg shadow-md border border-gray-200 p-6">
+					<h3 className="text-lg font-medium mb-4">Applications Over Time</h3>
+					<div className="h-80">
+						{chartStats.timelineData.length > 0 ? (
+							<ResponsiveContainer width="100%" height="100%">
+								<BarChart
+									data={chartStats.timelineData}
+									margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+								>
+									<CartesianGrid strokeDasharray="3 3" />
+									<XAxis dataKey="label" />
+									<YAxis allowDecimals={false} />
+									<Tooltip formatter={(value) => [`${value} applications`, "Count"]} />
+									<Bar dataKey="count" fill="#0088FE">
+										<LabelList dataKey="count" content={renderBarLabel} />
+									</Bar>
+								</BarChart>
+							</ResponsiveContainer>
+						) : (
+							<div className="h-full flex items-center justify-center text-sm text-gray-500">
+								No interview application data available.
+							</div>
+						)}
 					</div>
 				</div>
 
 				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-					<div className="flex items-center justify-between">
-						<div>
-							<p className="text-sm font-medium text-gray-600 mb-1">Completed</p>
-							<p className="text-3xl font-bold text-gray-900">
-								{data.filter((i) => String(i.status).toLowerCase() === "completed").length}
-							</p>
-						</div>
-						<div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-							<FileText className="w-6 h-6 text-green-600" />
-						</div>
-					</div>
-				</div>
-
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-					<div className="flex items-center justify-between">
-						<div>
-							<p className="text-sm font-medium text-gray-600 mb-1">Upcoming</p>
-							<p className="text-3xl font-bold text-gray-900">
-								{data.filter((i) => String(i.status).toLowerCase().includes("sched")).length}
-							</p>
-						</div>
-						<div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
-							<Clock className="w-6 h-6 text-purple-600" />
-						</div>
+					<h3 className="text-lg font-medium mb-4">Application Status</h3>
+					<div className="h-80">
+						{chartStats.visibleStatusData.length > 0 ? (
+							<ResponsiveContainer width="100%" height="100%">
+								<PieChart>
+									<Pie
+										data={chartStats.visibleStatusData}
+										cx="50%"
+										cy="45%"
+										outerRadius={70}
+										fill="#8884d8"
+										dataKey="value"
+										label={renderPieLabel}
+										labelLine={true}
+									>
+										{chartStats.visibleStatusData.map((entry, index) => (
+											<Cell key={`cell-${entry.name}-${index}`} fill={getStatusColor(entry.name)} />
+										))}
+									</Pie>
+									<Tooltip
+										formatter={(value, name) => {
+											const pct =
+												chartStats.statusTotal > 0
+													? ((Number(value) / chartStats.statusTotal) * 100).toFixed(1)
+													: "0";
+											return [`${value} applications (${pct}%)`, name];
+										}}
+									/>
+									<Legend
+										layout="horizontal"
+										verticalAlign="bottom"
+										align="center"
+										wrapperStyle={{ paddingTop: "20px" }}
+									/>
+								</PieChart>
+							</ResponsiveContainer>
+						) : (
+							<div className="h-full flex items-center justify-center text-sm text-gray-500">
+								No status data available.
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
@@ -351,6 +647,7 @@ export function InterviewTimeline({
 									<div key={yr} className="">
 										<div className="flex items-center justify-between mb-2">
 											<button
+												type="button"
 												onClick={() => setCollapsedYears((prev) => ({ ...prev, [yr]: !prev[yr] }))}
 												className="cursor-pointer flex items-center gap-3 w-full text-left p-2 rounded-lg hover:bg-gray-50"
 											>
@@ -375,8 +672,8 @@ export function InterviewTimeline({
 													transition={{ duration: 0.18 }}
 													className="space-y-2 overflow-hidden"
 												>
-													{items.map((item: any) => {
-														const dateSource = item.submissionDate || item.interviewDate || "";
+													{items.map((item) => {
+														const dateSource = getDateSource(item);
 														const monthYear = dateSource ? getMonthYear(dateSource) : "";
 														return (
 															<motion.button
@@ -427,17 +724,9 @@ export function InterviewTimeline({
 																		</div>
 																	</div>
 																	<span
-																		className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-																			item.status === "completed"
-																				? "bg-green-100 text-green-700"
-																				: item.status === "scheduled" ||
-																						item.status.toLowerCase().includes("sched")
-																					? "bg-blue-100 text-blue-700"
-																					: "bg-yellow-100 text-yellow-700"
-																		}`}
+																		className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeClass(item.status)}`}
 																	>
-																		{" "}
-																		{item.status}{" "}
+																		{item.status}
 																	</span>
 																</div>
 															</motion.button>
@@ -481,15 +770,9 @@ export function InterviewTimeline({
 											{/* Compact status badge at top-right */}
 											<div className="ml-auto self-start">
 												<span
-													className={`px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${
-														String(selectedInterview.status).toLowerCase() === "completed"
-															? "bg-green-100 text-green-700"
-															: String(selectedInterview.status).toLowerCase().includes("sched")
-																? "bg-blue-100 text-blue-700"
-																: "bg-yellow-100 text-yellow-700"
-													}`}
+													className={`px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${getStatusBadgeClass(selectedInterview.status)}`}
 												>
-													{selectedInterview?.status ? String(selectedInterview.status) : "N/A"}
+													{selectedInterview.status || "N/A"}
 												</span>
 											</div>
 										</div>
@@ -569,13 +852,10 @@ export function InterviewTimeline({
 										<div className="mt-1">
 											<textarea
 												name="interviewNotes"
-												value={normalizeNewlines(
-													String(
-														selectedInterview?.otherDetails ||
-															selectedInterview?.statusHistory ||
-															"",
-													),
-												).replace(/^\s*-{3,}\s*$/gm, "------------------------------------------")}
+												value={normalizeNewlines(selectedInterview.statusHistory || "").replace(
+													/^\s*-{3,}\s*$/gm,
+													"------------------------------------------",
+												)}
 												readOnly
 												rows={6}
 												wrap="soft"
@@ -589,6 +869,7 @@ export function InterviewTimeline({
 									{onViewApplication && selectedInterview?.id && (
 										<div className="mt-4 flex justify-end">
 											<button
+												type="button"
 												onClick={() => onViewApplication(selectedInterview.id)}
 												className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 cursor-pointer"
 											>
@@ -608,14 +889,17 @@ export function InterviewTimeline({
 						<table className="min-w-full divide-y divide-gray-200">
 							<thead className="bg-gray-50">
 								<tr>
-									<th
-										onClick={() => toggleSort("companyName")}
-										className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-									>
-										COMPANY
-										{sortKey === "companyName" && (
-											<span className="ml-2 text-xs">{sortDir === "asc" ? "▲" : "▼"}</span>
-										)}
+									<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+										<button
+											type="button"
+											onClick={() => toggleSort("companyName")}
+											className="inline-flex items-center gap-2 cursor-pointer select-none"
+										>
+											COMPANY
+											{sortKey === "companyName" && (
+												<span className="ml-2 text-xs">{sortDir === "asc" ? "▲" : "▼"}</span>
+											)}
+										</button>
 									</th>
 									<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
 										ROLE
@@ -689,19 +973,14 @@ export function InterviewTimeline({
 										</td>
 										<td className="px-6 py-4 whitespace-nowrap">
 											<span
-												className={`px-2 py-1 rounded-full text-xs font-medium ${
-													interview.status === "completed"
-														? "bg-green-100 text-green-700"
-														: interview.status === "scheduled"
-															? "bg-blue-100 text-blue-700"
-															: "bg-yellow-100 text-yellow-700"
-												}`}
+												className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeClass(interview.status)}`}
 											>
-												{interview.status === "completed" ? "Completed" : interview.status}
+												{isCompletedStatus(interview.status) ? "Completed" : interview.status}
 											</span>
 										</td>
 										<td className="px-6 py-4 whitespace-nowrap">
 											<button
+												type="button"
 												onClick={() => {
 													setSelectedInterview(interview);
 													setViewMode("timeline");
