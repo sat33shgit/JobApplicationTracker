@@ -12,6 +12,12 @@ const TOOLBAR_BUTTONS = [
 	{ command: "insertUnorderedList", label: "Bullets", title: "Bulleted list" },
 	{ command: "insertOrderedList", label: "Numbered", title: "Numbered list" },
 ];
+const FONT_SIZE_OPTIONS = [
+	{ label: "Small", value: "2" },
+	{ label: "Normal", value: "3" },
+	{ label: "Large", value: "4" },
+	{ label: "XL", value: "5" },
+];
 
 const EMPTY_COMMAND_STATE = {
 	bold: false,
@@ -19,40 +25,6 @@ const EMPTY_COMMAND_STATE = {
 	underline: false,
 	insertUnorderedList: false,
 	insertOrderedList: false,
-};
-
-const hasMeaningfulText = (value) =>
-	String(value || "")
-		.replace(/\u00a0/g, " ")
-		.trim().length > 0;
-
-const getElementFromNode = (node) => {
-	if (!node) return null;
-	return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-};
-
-const isEmptyParagraph = (node) => {
-	if (!(node instanceof HTMLElement) || node.tagName !== "P") return false;
-	return !hasMeaningfulText(node.textContent) && node.querySelector("br") !== null;
-};
-
-const findCurrentBlock = (editor, selection) => {
-	if (!editor || !selection || selection.rangeCount === 0) return null;
-	const anchorElement = getElementFromNode(selection.anchorNode);
-	if (!anchorElement || !editor.contains(anchorElement)) return null;
-	const block = anchorElement.closest("p, li, blockquote, ul, ol");
-	return block && editor.contains(block) ? block : null;
-};
-
-const placeCaretInside = (element) => {
-	if (!element) return;
-	const selection = window.getSelection?.();
-	if (!selection) return;
-	const range = document.createRange();
-	range.selectNodeContents(element);
-	range.collapse(true);
-	selection.removeAllRanges();
-	selection.addRange(range);
 };
 
 export function RichTextEditor({
@@ -152,61 +124,41 @@ export function RichTextEditor({
 		syncEditor({ sanitize: true });
 	};
 
-	const insertBlankLine = () => {
-		if (disabled) return;
+	const applyFontSize = (value) => {
+		if (disabled || !value) return;
 		const editor = editorRef.current;
 		if (!editor) return;
 		editor.focus();
-
-		const selection = window.getSelection?.();
-		const currentBlock = findCurrentBlock(editor, selection);
-		const referenceBlock =
-			currentBlock instanceof HTMLElement && currentBlock.tagName === "LI"
-				? currentBlock.closest("ul, ol") || currentBlock
-				: currentBlock;
-
-		const paragraph = document.createElement("p");
-		paragraph.appendChild(document.createElement("br"));
-
-		if (referenceBlock && referenceBlock !== editor) {
-			referenceBlock.insertAdjacentElement("afterend", paragraph);
-		} else {
-			editor.appendChild(paragraph);
+		try {
+			document.execCommand?.("styleWithCSS", false, false);
+		} catch (_error) {
+			// Ignore unsupported command in browsers that do not expose it.
 		}
-
-		placeCaretInside(paragraph);
-		syncEditor();
-	};
-
-	const removeBlankLine = () => {
-		if (disabled) return;
-		const editor = editorRef.current;
-		if (!editor) return;
-		editor.focus();
-
-		const selection = window.getSelection?.();
-		const currentBlock = findCurrentBlock(editor, selection);
-		const candidates = [];
-
-		if (currentBlock instanceof HTMLElement) {
-			candidates.push(currentBlock);
-			if (currentBlock.previousElementSibling) candidates.push(currentBlock.previousElementSibling);
-			if (currentBlock.nextElementSibling) candidates.push(currentBlock.nextElementSibling);
-		}
-
-		const paragraphToRemove = candidates.find((candidate) => isEmptyParagraph(candidate));
-		if (!paragraphToRemove) return;
-
-		const fallbackTarget =
-			paragraphToRemove.previousElementSibling || paragraphToRemove.nextElementSibling || editor;
-		paragraphToRemove.remove();
-		placeCaretInside(fallbackTarget);
+		document.execCommand?.("fontSize", false, value);
 		syncEditor({ sanitize: true });
 	};
 
 	return (
 		<div className="overflow-hidden rounded-md border border-gray-300">
 			<div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
+				<select
+					disabled={disabled}
+					defaultValue=""
+					aria-label="Font size"
+					onMouseDown={(event) => event.stopPropagation()}
+					onChange={(event) => {
+						applyFontSize(event.target.value);
+						event.target.value = "";
+					}}
+					className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<option value="">Font size</option>
+					{FONT_SIZE_OPTIONS.map((option) => (
+						<option key={option.value} value={option.value}>
+							{option.label}
+						</option>
+					))}
+				</select>
 				{TOOLBAR_BUTTONS.map((button) => (
 					<button
 						key={button.command}
@@ -232,26 +184,6 @@ export function RichTextEditor({
 					className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					Clear
-				</button>
-				<button
-					type="button"
-					disabled={disabled}
-					onMouseDown={(event) => event.preventDefault()}
-					onClick={insertBlankLine}
-					title="Insert a blank line"
-					className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					Space +
-				</button>
-				<button
-					type="button"
-					disabled={disabled}
-					onMouseDown={(event) => event.preventDefault()}
-					onClick={removeBlankLine}
-					title="Remove a nearby blank line"
-					className="cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					Space -
 				</button>
 			</div>
 

@@ -80,6 +80,15 @@ const renderAnswerNode = (node, key) => {
 			return createElement("code", { key }, children);
 		case "BLOCKQUOTE":
 			return createElement("blockquote", { key }, children);
+		case "SPAN":
+			return createElement(
+				"span",
+				{
+					key,
+					style: element.style.fontSize ? { fontSize: element.style.fontSize } : undefined,
+				},
+				children,
+			);
 		case "BR":
 			return createElement("br", { key });
 		default:

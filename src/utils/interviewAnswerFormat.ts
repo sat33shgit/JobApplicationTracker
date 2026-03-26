@@ -1,8 +1,38 @@
 import { normalizeNewlines } from "./text";
 
-const RICH_TEXT_TAG_PATTERN = /<(p|br|ul|ol|li|strong|b|em|i|u|code|blockquote|div|span)(\s|>)/i;
+const RICH_TEXT_TAG_PATTERN =
+	/<(p|br|ul|ol|li|strong|b|em|i|u|code|blockquote|div|span|font)(\s|>)/i;
 const BLOCK_TAGS = new Set(["P", "UL", "OL", "BLOCKQUOTE"]);
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "HEAD"]);
+const FONT_SIZE_MAP = {
+	"1": "0.75rem",
+	"2": "0.875rem",
+	"3": "1rem",
+	"4": "1.125rem",
+	"5": "1.25rem",
+	"6": "1.5rem",
+	"7": "1.875rem",
+	"0.75rem": "0.75rem",
+	"0.875rem": "0.875rem",
+	"1rem": "1rem",
+	"1.125rem": "1.125rem",
+	"1.25rem": "1.25rem",
+	"1.5rem": "1.5rem",
+	"1.875rem": "1.875rem",
+	"12px": "0.75rem",
+	"14px": "0.875rem",
+	"16px": "1rem",
+	"18px": "1.125rem",
+	"20px": "1.25rem",
+	"24px": "1.5rem",
+	"30px": "1.875rem",
+	"x-small": "0.75rem",
+	small: "0.875rem",
+	medium: "1rem",
+	large: "1.125rem",
+	"x-large": "1.25rem",
+	"xx-large": "1.5rem",
+} as const;
 
 const escapeHtml = (value: string): string =>
 	String(value || "")
@@ -32,6 +62,20 @@ const hasMeaningfulText = (value: string): boolean =>
 
 const isRichTextHtml = (value: string): boolean => RICH_TEXT_TAG_PATTERN.test(String(value || ""));
 
+const sanitizeFontSizeValue = (value: string | null | undefined): string | null => {
+	if (!value) return null;
+	const normalized = String(value).trim().toLowerCase();
+	return FONT_SIZE_MAP[normalized as keyof typeof FONT_SIZE_MAP] || null;
+};
+
+const getSanitizedFontSize = (source: HTMLElement): string | null => {
+	if (source.tagName.toUpperCase() === "FONT") {
+		return sanitizeFontSizeValue(source.getAttribute("size"));
+	}
+
+	return sanitizeFontSizeValue(source.style?.fontSize || source.getAttribute("data-font-size"));
+};
+
 const sanitizeNode = (node: Node, doc: Document): Node | null => {
 	if (node.nodeType === Node.TEXT_NODE) {
 		return doc.createTextNode(node.textContent || "");
@@ -57,7 +101,11 @@ const sanitizeNode = (node: Node, doc: Document): Node | null => {
 	const normalizedTag =
 		tagName === "B" ? "STRONG" : tagName === "I" ? "EM" : tagName === "DIV" ? "P" : tagName;
 
-	if (!["P", "UL", "OL", "LI", "STRONG", "EM", "U", "CODE", "BLOCKQUOTE"].includes(normalizedTag)) {
+	if (
+		!["P", "UL", "OL", "LI", "STRONG", "EM", "U", "CODE", "BLOCKQUOTE", "SPAN", "FONT"].includes(
+			normalizedTag,
+		)
+	) {
 		const fragment = doc.createDocumentFragment();
 		for (const child of Array.from(source.childNodes)) {
 			const cleanChild = sanitizeNode(child, doc);
@@ -66,12 +114,26 @@ const sanitizeNode = (node: Node, doc: Document): Node | null => {
 		return fragment;
 	}
 
-	const cleanElement = doc.createElement(normalizedTag.toLowerCase());
+	const cleanTagName = normalizedTag === "FONT" ? "SPAN" : normalizedTag;
+	if (cleanTagName === "SPAN" && !getSanitizedFontSize(source)) {
+		const fragment = doc.createDocumentFragment();
+		for (const child of Array.from(source.childNodes)) {
+			const cleanChild = sanitizeNode(child, doc);
+			if (cleanChild) fragment.appendChild(cleanChild);
+		}
+		return fragment;
+	}
+
+	const cleanElement = doc.createElement(cleanTagName.toLowerCase());
+	if (cleanTagName === "SPAN") {
+		const fontSize = getSanitizedFontSize(source);
+		if (fontSize) cleanElement.style.fontSize = fontSize;
+	}
 	for (const child of Array.from(source.childNodes)) {
 		const cleanChild = sanitizeNode(child, doc);
 		if (!cleanChild) continue;
 		if (
-			(normalizedTag === "UL" || normalizedTag === "OL") &&
+			(cleanTagName === "UL" || cleanTagName === "OL") &&
 			cleanChild.nodeType === Node.ELEMENT_NODE
 		) {
 			const childElement = cleanChild as HTMLElement;
@@ -85,17 +147,17 @@ const sanitizeNode = (node: Node, doc: Document): Node | null => {
 		cleanElement.appendChild(cleanChild);
 	}
 
-	if (normalizedTag === "LI") {
+	if (cleanTagName === "LI") {
 		const textContent = cleanElement.textContent || "";
 		if (!hasMeaningfulText(textContent) && cleanElement.querySelector("br") === null) return null;
 	}
 
-	if (normalizedTag === "P" || normalizedTag === "BLOCKQUOTE") {
+	if (cleanTagName === "P" || cleanTagName === "BLOCKQUOTE") {
 		const textContent = cleanElement.textContent || "";
 		if (!hasMeaningfulText(textContent) && cleanElement.querySelector("br") === null) return null;
 	}
 
-	if ((normalizedTag === "UL" || normalizedTag === "OL") && cleanElement.children.length === 0) {
+	if ((cleanTagName === "UL" || cleanTagName === "OL") && cleanElement.children.length === 0) {
 		return null;
 	}
 
