@@ -1408,3 +1408,61 @@ html {
   syntax: "*";
   inherits: false
 }
+
+.interview-answer-content {
+  color: var(--color-gray-700);
+  line-height: 1.7;
+}
+
+.interview-answer-content p + p,
+.interview-answer-content ul + p,
+.interview-answer-content ol + p,
+.interview-answer-content p + ul,
+.interview-answer-content p + ol,
+.interview-answer-content ul + ul,
+.interview-answer-content ol + ol,
+.interview-answer-content blockquote + p,
+.interview-answer-content p + blockquote {
+  margin-top: 0.75rem;
+}
+
+.interview-answer-content ul,
+.interview-answer-content ol {
+  padding-left: 1.5rem;
+}
+
+.interview-answer-content ul {
+  list-style: disc;
+}
+
+.interview-answer-content ol {
+  list-style: decimal;
+}
+
+.interview-answer-content li + li {
+  margin-top: 0.35rem;
+}
+
+.interview-answer-content blockquote {
+  border-left: 3px solid var(--color-gray-300);
+  color: var(--color-gray-500);
+  padding-left: 0.75rem;
+}
+
+.interview-answer-content code {
+  background: var(--color-gray-100);
+  border-radius: 0.375rem;
+  font-family: var(--default-mono-font-family);
+  font-size: 0.9em;
+  padding: 0.1rem 0.35rem;
+}
+
+.rich-text-editor {
+  white-space: normal;
+}
+
+.rich-text-editor[data-empty="true"]::before {
+  color: var(--color-gray-400);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}

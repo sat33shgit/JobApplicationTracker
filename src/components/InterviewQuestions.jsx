@@ -1,8 +1,14 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createElement, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import ReactDOM from "react-dom";
 import { Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
-import { normalizeNewlines } from "../utils/text";
+import { RichTextEditor } from "./RichTextEditor";
+import {
+	answerHasContent,
+	answerToPlainText,
+	prepareAnswerForEditor,
+	renderAnswerHtml,
+} from "../utils/interviewAnswerFormat";
 
 const categories = [
 	"Architecture",
@@ -28,29 +34,81 @@ const categories = [
 	"Team Management",
 ];
 
-// Helpers moved out of component to reduce component size and make them reusable
-const escapeHtml = (s) =>
-	String(s || "")
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;");
-
-const textToHtml = (raw) => {
-	if (!raw && raw !== "") return "";
-	let s = String(raw || "");
-	s = normalizeNewlines(s);
-	s = escapeHtml(s);
-	s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-	s = s.replace(/(^|\s)\*(.+?)\*(?=\s|$)/g, (_m, p1, p2) => `${p1}<em>${p2}</em>`);
-	s = s.replace(/`([^`]+?)`/g, "<code>$1</code>");
-	const paragraphs = s.split(/\n{2,}/g).map((para) => {
-		const p = para.replace(/\n/g, "<br/>");
-		return `<p>${p}</p>`;
-	});
-	return paragraphs.join("\n");
+const formFieldIds = {
+	category: "interview-question-category",
+	company: "interview-question-company",
+	role: "interview-question-role",
+	question: "interview-question-question",
+	answer: "interview-question-answer",
 };
+
+const createEmptyQuestion = (category = categories[0]) => ({
+	question: "",
+	answer: "",
+	category,
+	company: "",
+	role: "",
+});
+
+const getErrorMessage = (error) => error?.message || "unknown error";
+
+const renderAnswerNode = (node, key) => {
+	if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+	if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+	const element = node;
+	const children = Array.from(element.childNodes)
+		.map((child, index) => renderAnswerNode(child, `${key}-${index}`))
+		.filter((child) => child !== null);
+
+	switch (element.tagName.toUpperCase()) {
+		case "P":
+			return createElement("p", { key }, children);
+		case "UL":
+			return createElement("ul", { key }, children);
+		case "OL":
+			return createElement("ol", { key }, children);
+		case "LI":
+			return createElement("li", { key }, children);
+		case "STRONG":
+			return createElement("strong", { key }, children);
+		case "EM":
+			return createElement("em", { key }, children);
+		case "U":
+			return createElement("u", { key }, children);
+		case "CODE":
+			return createElement("code", { key }, children);
+		case "BLOCKQUOTE":
+			return createElement("blockquote", { key }, children);
+		case "BR":
+			return createElement("br", { key });
+		default:
+			return null;
+	}
+};
+
+const renderAnswerContent = (html) => {
+	if (!html || typeof window === "undefined" || typeof window.document === "undefined") return null;
+	const doc = window.document.implementation.createHTMLDocument("");
+	doc.body.innerHTML = html;
+	return Array.from(doc.body.childNodes)
+		.map((child, index) => renderAnswerNode(child, `answer-node-${index}`))
+		.filter((child) => child !== null);
+};
+
+const normalizeQuestion = (row) => {
+	const question = row || {};
+	const answer = question.answer || "";
+	return {
+		...question,
+		answer,
+		htmlAnswer: renderAnswerHtml(answer),
+		plainAnswer: answerToPlainText(answer),
+	};
+};
+
+const normalizeQuestions = (rows) =>
+	(Array.isArray(rows) ? rows : []).map((row) => normalizeQuestion(row));
 
 // Simple in-memory cache to avoid refetching interview questions on repeated mounts
 let cachedInterviewQuestions = null;
@@ -61,13 +119,7 @@ export function InterviewQuestions() {
 	const [showAddForm, setShowAddForm] = useState(false);
 	const [editingId, setEditingId] = useState(null);
 	const [expandedQuestions, setExpandedQuestions] = useState({});
-	const [newQuestion, setNewQuestion] = useState({
-		question: "",
-		answer: "",
-		category: categories[0],
-		company: "",
-		role: "",
-	});
+	const [newQuestion, setNewQuestion] = useState(() => createEmptyQuestion());
 	const [errors, setErrors] = useState({});
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
 	const [pendingDeleteId, setPendingDeleteId] = useState(null);
@@ -103,7 +155,7 @@ export function InterviewQuestions() {
 				if (categoryFilter && q.category !== categoryFilter) return false;
 				if (companyFilter && (q.company || "").trim() !== companyFilter) return false;
 				const searchString =
-					`${q.question} ${q.answer} ${q.category} ${q.company || ""} ${q.role || ""}`.toLowerCase();
+					`${q.question} ${q.plainAnswer || ""} ${q.category} ${q.company || ""} ${q.role || ""}`.toLowerCase();
 				return searchString.includes(searchTerm.toLowerCase());
 			}),
 		[questions, searchTerm, categoryFilter, companyFilter],
@@ -113,10 +165,7 @@ export function InterviewQuestions() {
 		let mounted = true;
 
 		const setFromRows = (rows) => {
-			const normalized = (Array.isArray(rows) ? rows : []).map((r) => ({
-				...(r || {}),
-				htmlAnswer: r && r.answer ? textToHtml(r.answer) : "",
-			}));
+			const normalized = normalizeQuestions(rows);
 			if (mounted) setQuestions(normalized);
 		};
 
@@ -164,92 +213,96 @@ export function InterviewQuestions() {
 	};
 	const collapseAll = () => setExpandedQuestions({});
 
+	const resetQuestionForm = useCallback((category = categories[0]) => {
+		setNewQuestion(createEmptyQuestion(category));
+		setErrors({});
+	}, []);
+
+	const closeQuestionForm = useCallback(() => {
+		setShowAddForm(false);
+		setEditingId(null);
+		resetQuestionForm();
+	}, [resetQuestionForm]);
+
 	const handleInputChange = (e) => {
 		const { name, value } = e.target;
 		setNewQuestion((prev) => ({ ...prev, [name]: value }));
 		setErrors((prev) => ({ ...prev, [name]: "" }));
 	};
 
-	const handleSubmit = (e) => {
+	const handleAnswerChange = (value) => {
+		setNewQuestion((prev) => ({ ...prev, answer: value }));
+		setErrors((prev) => ({ ...prev, answer: "" }));
+	};
+
+	const handleSubmit = async (e) => {
 		e.preventDefault();
 		const newErrors = {};
 		if (!newQuestion.question?.trim()) newErrors.question = "Question is required";
-		if (!newQuestion.answer?.trim()) newErrors.answer = "Answer is required";
+		if (!answerHasContent(newQuestion.answer)) newErrors.answer = "Answer is required";
 		if (!newQuestion.category) newErrors.category = "Category is required";
 		if (Object.keys(newErrors).length > 0) {
 			setErrors(newErrors);
 			return;
 		}
-		// Persist to backend
-		(async () => {
-			setSavingQuestion(true);
-			try {
-				// Build an explicit payload to avoid accidental missing fields
-				const payload = {
-					question: newQuestion.question,
-					answer: newQuestion.answer,
-					category: newQuestion.category,
-					company: newQuestion.company,
-					role: newQuestion.role,
-				};
+		setSavingQuestion(true);
+		try {
+			const payload = {
+				question: newQuestion.question,
+				answer: prepareAnswerForEditor(newQuestion.answer),
+				category: newQuestion.category,
+				company: newQuestion.company,
+				role: newQuestion.role,
+			};
 
-				if (editingId) {
-					const resp = await fetch(`/api/interview-questions/${editingId}`, {
-						method: "PUT",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify(payload),
-					});
-					if (!resp.ok) {
-						let body = "";
-						try {
-							body = await resp.text();
-						} catch (e) {
-							/* ignore */
-						}
-						throw new Error(body || `Failed to update (${resp.status})`);
-					}
-					const updated = await resp.json();
-					updated.htmlAnswer = updated.answer ? textToHtml(updated.answer) : "";
-					const next = questions.map((q) => (q.id === editingId ? updated : q));
-					cachedInterviewQuestions = next;
-					setQuestions(next);
-					setEditingId(null);
-				} else {
-					const resp = await fetch("/api/interview-questions", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify(payload),
-					});
-					if (!resp.ok) {
-						let body = "";
-						try {
-							body = await resp.text();
-						} catch (e) {
-							/* ignore */
-						}
-						throw new Error(body || `Failed to create (${resp.status})`);
-					}
-					const created = await resp.json();
-					created.htmlAnswer = created.answer ? textToHtml(created.answer) : "";
-					const next = [created, ...questions];
-					cachedInterviewQuestions = next;
-					setQuestions(next);
-				}
-				setNewQuestion({
-					question: "",
-					answer: "",
-					category: categories[0],
-					company: "",
-					role: "",
+			if (editingId) {
+				const resp = await fetch(`/api/interview-questions/${editingId}`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
 				});
-				setShowAddForm(false);
-			} catch (err) {
-				console.error("Save failed", err);
-				alert("Failed to save question: " + (err && err.message ? err.message : "unknown error"));
-			} finally {
-				setSavingQuestion(false);
+				if (!resp.ok) {
+					let body = "";
+					try {
+						body = await resp.text();
+					} catch (_error) {
+						/* ignore */
+					}
+					throw new Error(body || `Failed to update (${resp.status})`);
+				}
+				const updated = await resp.json();
+				const next = questions.map((q) => (q.id === editingId ? normalizeQuestion(updated) : q));
+				cachedInterviewQuestions = next;
+				setQuestions(next);
+				setEditingId(null);
+			} else {
+				const resp = await fetch("/api/interview-questions", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
+				});
+				if (!resp.ok) {
+					let body = "";
+					try {
+						body = await resp.text();
+					} catch (_error) {
+						/* ignore */
+					}
+					throw new Error(body || `Failed to create (${resp.status})`);
+				}
+				const created = await resp.json();
+				const next = [normalizeQuestion(created), ...questions];
+				cachedInterviewQuestions = next;
+				setQuestions(next);
 			}
-		})();
+
+			closeQuestionForm();
+		} catch (err) {
+			console.error("Save failed", err);
+			window.alert(`Failed to save question: ${getErrorMessage(err)}`);
+		} finally {
+			setSavingQuestion(false);
+		}
 	};
 
 	const handleEdit = (id) => {
@@ -257,7 +310,7 @@ export function InterviewQuestions() {
 		if (!q) return;
 		setNewQuestion({
 			question: q.question,
-			answer: q.answer,
+			answer: prepareAnswerForEditor(q.answer),
 			category: q.category,
 			company: q.company || "",
 			role: q.role || "",
@@ -268,7 +321,7 @@ export function InterviewQuestions() {
 
 	const handleAddForCategory = (category) => {
 		setEditingId(null);
-		setNewQuestion({ question: "", answer: "", category: category, company: "", role: "" });
+		resetQuestionForm(category);
 		setShowAddForm(true);
 	};
 
@@ -285,7 +338,7 @@ export function InterviewQuestions() {
 				let body = "";
 				try {
 					body = await resp.text();
-				} catch (e) {
+				} catch (_error) {
 					/* ignore */
 				}
 				throw new Error(`Delete failed: ${resp.status} ${resp.statusText} ${body}`);
@@ -295,10 +348,7 @@ export function InterviewQuestions() {
 				const listResp = await fetch("/api/interview-questions");
 				if (listResp.ok) {
 					const data = await listResp.json();
-					const normalized = (Array.isArray(data) ? data : []).map((r) => ({
-						...(r || {}),
-						htmlAnswer: r && r.answer ? textToHtml(r.answer) : "",
-					}));
+					const normalized = normalizeQuestions(data);
 					cachedInterviewQuestions = normalized;
 					setQuestions(normalized);
 				} else {
@@ -306,7 +356,7 @@ export function InterviewQuestions() {
 					cachedInterviewQuestions = next;
 					setQuestions(next);
 				}
-			} catch (e) {
+			} catch (_error) {
 				const next = questions.filter((q) => q.id !== pendingDeleteId);
 				cachedInterviewQuestions = next;
 				setQuestions(next);
@@ -326,7 +376,7 @@ export function InterviewQuestions() {
 			toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
 		} catch (err) {
 			console.error("Delete failed", err);
-			alert("Failed to delete question: " + (err && err.message ? err.message : "unknown error"));
+			window.alert(`Failed to delete question: ${getErrorMessage(err)}`);
 		}
 	};
 	const cancelDelete = () => {
@@ -359,16 +409,11 @@ export function InterviewQuestions() {
 					<div className="flex items-center justify-between">
 						<h2 className="text-2xl font-bold text-gray-900">Interview Questions and Answers</h2>
 						<button
+							type="button"
 							onClick={() => {
 								setShowAddForm(true);
 								setEditingId(null);
-								setNewQuestion({
-									question: "",
-									answer: "",
-									category: categories[0],
-									company: "",
-									role: "",
-								});
+								resetQuestionForm();
 							}}
 							className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"
 						>
@@ -450,6 +495,7 @@ export function InterviewQuestions() {
 					</div>
 					<div className="flex space-x-2">
 						<button
+							type="button"
 							onClick={expandAll}
 							className="cursor-pointer text-sm text-blue-600 hover:text-blue-800"
 						>
@@ -457,6 +503,7 @@ export function InterviewQuestions() {
 						</button>
 						<span className="text-gray-300">|</span>
 						<button
+							type="button"
 							onClick={collapseAll}
 							className="cursor-pointer text-sm text-blue-600 hover:text-blue-800"
 						>
@@ -503,8 +550,7 @@ export function InterviewQuestions() {
 											}}
 										>
 											<div
-												className="bg-gray-50 rounded-t-lg overflow-hidden px-4 py-3 cursor-pointer flex justify-between items-center hover:bg-gray-100"
-												onClick={() => toggleQuestion(question.id)}
+												className="bg-gray-50 rounded-t-lg overflow-hidden px-4 py-3 flex justify-between items-center hover:bg-gray-100"
 												style={{
 													borderTopLeftRadius: "0.5rem",
 													borderTopRightRadius: "0.5rem",
@@ -514,7 +560,11 @@ export function InterviewQuestions() {
 														: "0.5rem",
 												}}
 											>
-												<div className="flex items-center space-x-4 flex-1 pl-2">
+												<button
+													type="button"
+													onClick={() => toggleQuestion(question.id)}
+													className="flex min-w-0 flex-1 cursor-pointer items-center space-x-4 pl-2 text-left"
+												>
 													{expandedQuestions[question.id] ? (
 														<ChevronUp className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1 chevron-fixed" />
 													) : (
@@ -535,21 +585,26 @@ export function InterviewQuestions() {
 															</div>
 														) : null}
 													</div>
-												</div>
+												</button>
 
-												<div
-													className="flex items-center space-x-2 ml-4"
-													onClick={(e) => e.stopPropagation()}
-												>
+												<div className="flex items-center space-x-2 ml-4">
 													<button
-														onClick={() => handleEdit(question.id)}
+														type="button"
+														onClick={(event) => {
+															event.stopPropagation();
+															handleEdit(question.id);
+														}}
 														className="cursor-pointer p-1 text-blue-600 hover:bg-blue-50 rounded"
 														title="Edit question"
 													>
 														<Edit className="h-4 w-4" />
 													</button>
 													<button
-														onClick={() => handleDelete(question.id)}
+														type="button"
+														onClick={(event) => {
+															event.stopPropagation();
+															handleDelete(question.id);
+														}}
 														className="cursor-pointer p-1 text-red-600 hover:bg-red-50 rounded"
 														title="Delete question"
 													>
@@ -566,12 +621,11 @@ export function InterviewQuestions() {
 													transition={{ duration: 0.2 }}
 													className="bg-white px-4 py-4 border-t border-gray-200 rounded-b-lg"
 												>
-													<div
-														className="text-gray-700"
-														dangerouslySetInnerHTML={{
-															__html: question.htmlAnswer || textToHtml(question.answer),
-														}}
-													/>
+													<div className="interview-answer-content text-gray-700">
+														{renderAnswerContent(
+															question.htmlAnswer || renderAnswerHtml(question.answer),
+														)}
+													</div>
 												</motion.div>
 											)}
 										</motion.div>
@@ -591,7 +645,7 @@ export function InterviewQuestions() {
 						initial={{ opacity: 0, scale: 0.9 }}
 						animate={{ opacity: 1, scale: 1 }}
 						className="bg-white rounded-lg shadow-xl mx-auto overflow-y-auto"
-						style={{ width: "33vw", minWidth: "360px", maxWidth: "900px", maxHeight: "90vh" }}
+						style={{ width: "min(92vw, 1120px)", maxHeight: "90vh" }}
 					>
 						<div className="p-6">
 							<div className="flex justify-between items-center mb-6">
@@ -601,17 +655,7 @@ export function InterviewQuestions() {
 								<button
 									type="button"
 									disabled={savingQuestion}
-									onClick={() => {
-										setShowAddForm(false);
-										setEditingId(null);
-										setNewQuestion({
-											question: "",
-											answer: "",
-											category: categories[0],
-											company: "",
-										});
-										setErrors({});
-									}}
+									onClick={closeQuestionForm}
 									className="cursor-pointer text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
 								>
 									<X className="h-6 w-6" />
@@ -620,8 +664,14 @@ export function InterviewQuestions() {
 
 							<form onSubmit={handleSubmit} className="space-y-4">
 								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+									<label
+										htmlFor={formFieldIds.category}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Category *
+									</label>
 									<select
+										id={formFieldIds.category}
 										name="category"
 										value={newQuestion.category}
 										onChange={handleInputChange}
@@ -639,10 +689,14 @@ export function InterviewQuestions() {
 								</div>
 
 								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">
+									<label
+										htmlFor={formFieldIds.company}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
 										Company (optional)
 									</label>
 									<input
+										id={formFieldIds.company}
 										name="company"
 										value={newQuestion.company}
 										onChange={handleInputChange}
@@ -653,10 +707,14 @@ export function InterviewQuestions() {
 								</div>
 
 								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">
+									<label
+										htmlFor={formFieldIds.role}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
 										Role (optional)
 									</label>
 									<input
+										id={formFieldIds.role}
 										name="role"
 										value={newQuestion.role}
 										onChange={handleInputChange}
@@ -666,8 +724,14 @@ export function InterviewQuestions() {
 								</div>
 
 								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Question *</label>
+									<label
+										htmlFor={formFieldIds.question}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Question *
+									</label>
 									<textarea
+										id={formFieldIds.question}
 										name="question"
 										value={newQuestion.question}
 										onChange={handleInputChange}
@@ -682,15 +746,19 @@ export function InterviewQuestions() {
 								</div>
 
 								<div>
-									<label className="block text-sm font-medium text-gray-700 mb-1">Answer *</label>
-									<textarea
-										name="answer"
+									<label
+										htmlFor={formFieldIds.answer}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Answer *
+									</label>
+									<RichTextEditor
+										inputId={formFieldIds.answer}
 										value={newQuestion.answer}
-										onChange={handleInputChange}
-										rows={6}
+										onChange={handleAnswerChange}
 										placeholder="Enter your prepared answer..."
 										disabled={savingQuestion}
-										className={`w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed ${errors.answer ? "border-red-500" : ""}`}
+										hasError={Boolean(errors.answer)}
 									/>
 									{errors.answer && <p className="text-red-500 text-sm mt-1">{errors.answer}</p>}
 								</div>
@@ -699,18 +767,7 @@ export function InterviewQuestions() {
 									<button
 										type="button"
 										disabled={savingQuestion}
-										onClick={() => {
-											setShowAddForm(false);
-											setEditingId(null);
-											setNewQuestion({
-												question: "",
-												answer: "",
-												category: categories[0],
-												company: "",
-												role: "",
-											});
-											setErrors({});
-										}}
+										onClick={closeQuestionForm}
 										className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
 										Cancel
@@ -762,12 +819,14 @@ export function InterviewQuestions() {
 
 							<div className="border-t border-gray-200 mt-4 pt-4 flex justify-end items-center gap-6">
 								<button
+									type="button"
 									onClick={cancelDelete}
 									className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 bg-white"
 								>
 									Cancel
 								</button>
 								<button
+									type="button"
 									onClick={confirmDelete}
 									className="cursor-pointer px-4 py-2 border border-red-600 text-red-600 rounded-md hover:bg-red-50 bg-white"
 								>
@@ -783,6 +842,7 @@ export function InterviewQuestions() {
 			{showBackToTop &&
 				ReactDOM.createPortal(
 					<button
+						type="button"
 						onClick={scrollToTop}
 						aria-label="Back to top"
 						style={{
