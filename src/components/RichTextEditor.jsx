@@ -139,8 +139,8 @@ export function RichTextEditor({
 	};
 
 	return (
-		<div className="overflow-hidden rounded-md border border-gray-300">
-			<div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
+		<div className="relative rounded-md border border-gray-300 bg-white">
+			<div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-t-md border-b border-gray-200 bg-gray-50 px-3 py-2 shadow-[0_1px_0_rgba(229,231,235,1)]">
 				<select
 					disabled={disabled}
 					defaultValue=""
@@ -198,7 +198,7 @@ export function RichTextEditor({
 				aria-label="Answer"
 				data-placeholder={placeholder}
 				data-empty={isEmpty ? "true" : "false"}
-				className={`rich-text-editor interview-answer-content min-h-[10rem] px-3 py-2 text-gray-900 outline-none ${disabled ? "cursor-not-allowed bg-gray-100" : "bg-white"} ${hasError ? "ring-1 ring-red-500" : ""}`}
+				className={`rich-text-editor interview-answer-content min-h-[10rem] rounded-b-md px-3 py-2 text-gray-900 outline-none ${disabled ? "cursor-not-allowed bg-gray-100" : "bg-white"} ${hasError ? "ring-1 ring-red-500" : ""}`}
 				onInput={() => syncEditor()}
 				onBlur={() => syncEditor({ sanitize: true })}
 				onKeyUp={refreshCommandState}
