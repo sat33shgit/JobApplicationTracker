@@ -85,6 +85,12 @@ type BarLabelProps = {
 };
 
 type SortKey = "companyName" | "role" | "interviewDate" | "submissionDate" | "status";
+type TimelineGranularity = "monthly" | "yearly";
+type TimelineBucket = {
+	key: string;
+	label: string;
+	ts: number;
+};
 
 const emptyContact: ContactInfo = { name: "", email: "" };
 
@@ -111,12 +117,21 @@ const formatDisplayDate = (isoDate: string) => {
 	return `${day} ${month} ${year}`;
 };
 
+const formatDisplayMonth = (date: Date) =>
+	date.toLocaleString("en-US", {
+		month: "short",
+		year: "numeric",
+	});
+
 const getMonthYear = (isoDate: string) => {
 	const date = parseLocalYMD(isoDate) || new Date(isoDate);
-	const month = date.toLocaleString("en-US", { month: "short" });
-	const year = date.getFullYear();
-	return `${month} ${year}`;
+	return formatDisplayMonth(date);
 };
+
+const timelineGranularityOptions: Array<{ label: string; value: TimelineGranularity }> = [
+	{ label: "Monthly", value: "monthly" },
+	{ label: "Yearly", value: "yearly" },
+];
 
 const statusOptions = [
 	"Applied",
@@ -298,11 +313,23 @@ const renderBarLabel = (props: BarLabelProps) => {
 	);
 };
 
-const toLocalDateKey = (date: Date) => {
+const getTimelineBucket = (date: Date, granularity: TimelineGranularity): TimelineBucket => {
 	const year = date.getFullYear();
+
+	if (granularity === "yearly") {
+		return {
+			key: String(year),
+			label: String(year),
+			ts: new Date(year, 0, 1).getTime(),
+		};
+	}
+
 	const month = String(date.getMonth() + 1).padStart(2, "0");
-	const day = String(date.getDate()).padStart(2, "0");
-	return `${year}-${month}-${day}`;
+	return {
+		key: `${year}-${month}`,
+		label: formatDisplayMonth(date),
+		ts: new Date(year, date.getMonth(), 1).getTime(),
+	};
 };
 
 const toCanonicalStatus = (value: unknown) => {
@@ -389,9 +416,10 @@ export function InterviewTimeline({
 		};
 	}, [_applications, _companies]);
 	const [viewMode, setViewMode] = useState<"timeline" | "list">("timeline");
+	const [timelineGranularity, setTimelineGranularity] = useState<TimelineGranularity>("monthly");
 
 	const chartStats = useMemo(() => {
-		const dateCounts = new Map<string, { label: string; count: number; ts: number }>();
+		const timelineCounts = new Map<string, { label: string; count: number; ts: number }>();
 		const knownStatusCounts = new Map<string, number>(statusOptions.map((status) => [status, 0]));
 		const extraStatusCounts = new Map<string, number>();
 
@@ -399,15 +427,15 @@ export function InterviewTimeline({
 			const dateSource = getDateSource(item);
 			const parsedDate = parseLocalYMD(dateSource);
 			if (parsedDate) {
-				const key = toLocalDateKey(parsedDate);
-				const existing = dateCounts.get(key);
+				const bucket = getTimelineBucket(parsedDate, timelineGranularity);
+				const existing = timelineCounts.get(bucket.key);
 				if (existing) {
 					existing.count += 1;
 				} else {
-					dateCounts.set(key, {
-						label: formatDisplayDate(key),
+					timelineCounts.set(bucket.key, {
+						label: bucket.label,
 						count: 1,
-						ts: parsedDate.getTime(),
+						ts: bucket.ts,
 					});
 				}
 			}
@@ -420,7 +448,9 @@ export function InterviewTimeline({
 			}
 		}
 
-		const timelineData = Array.from(dateCounts.values()).sort((a, b) => a.ts - b.ts);
+		const timelineData = Array.from(timelineCounts.values())
+			.filter((entry) => entry.count > 0)
+			.sort((a, b) => a.ts - b.ts);
 		const visibleStatusData = [
 			...statusOptions.map((status) => ({
 				name: status,
@@ -435,7 +465,7 @@ export function InterviewTimeline({
 			timelineData,
 			visibleStatusData,
 		};
-	}, [data]);
+	}, [data, timelineGranularity]);
 
 	const [sortKey, setSortKey] = useState<SortKey>("submissionDate");
 	const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -561,16 +591,34 @@ export function InterviewTimeline({
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 				<div className="lg:col-span-2 bg-white rounded-lg shadow-md border border-gray-200 p-6">
-					<h3 className="text-lg font-medium mb-4">Applications Over Time</h3>
+					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+						<h3 className="text-lg font-medium">Applications Over Time</h3>
+						<div className="inline-flex w-fit rounded-lg bg-gray-100 p-1">
+							{timelineGranularityOptions.map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									onClick={() => setTimelineGranularity(option.value)}
+									className={`cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+										timelineGranularity === option.value
+											? "bg-blue-600 text-white shadow-sm"
+											: "text-gray-700 hover:bg-gray-200"
+									}`}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
+					</div>
 					<div className="h-80">
 						{chartStats.timelineData.length > 0 ? (
 							<ResponsiveContainer width="100%" height="100%">
 								<BarChart
 									data={chartStats.timelineData}
-									margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+									margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
 								>
 									<CartesianGrid strokeDasharray="3 3" />
-									<XAxis dataKey="label" />
+									<XAxis dataKey="label" minTickGap={24} />
 									<YAxis allowDecimals={false} />
 									<Tooltip formatter={(value) => [`${value} applications`, "Count"]} />
 									<Bar dataKey="count" fill="#0088FE">
