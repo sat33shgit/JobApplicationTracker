@@ -8,6 +8,19 @@ const jobs = [];
 const attachments = [];
 let nextJobId = 1;
 let nextAttachId = 1;
+
+function getMockInterviewQuestions() {
+  if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
+  if (!global.__mock_interview_questions_next_id) global.__mock_interview_questions_next_id = 1;
+  return global.__mock_interview_questions;
+}
+
+function getMockInterviewerQuestions() {
+  if (!global.__mock_interviewer_questions) global.__mock_interviewer_questions = [];
+  if (!global.__mock_interviewer_questions_next_id) global.__mock_interviewer_questions_next_id = 1;
+  return global.__mock_interviewer_questions;
+}
+
 function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 async function mockQuery(text, params) {
   const t = (text || '').trim();
@@ -18,7 +31,7 @@ async function mockQuery(text, params) {
     return { rows: clone(rows), rowCount: rows.length };
   }
   if (tl.startsWith('select') && tl.includes('from jobs') && tl.includes('where') && tl.includes('id')) {
-    const id = params && params[0];
+    const id = params?.[0];
     const row = jobs.find(j => j.id === Number(id));
     return { rows: row ? [clone(row)] : [], rowCount: row ? 1 : 0 };
   }
@@ -59,48 +72,100 @@ async function mockQuery(text, params) {
   }
   // Interview questions mock handling
   if (tl.startsWith('select') && tl.includes('from interview_questions') && tl.includes('order by')) {
-    // store interview questions in a local array attached to module scope
-    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
-    const rows = global.__mock_interview_questions.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    const rows = getMockInterviewQuestions().slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
     return { rows: clone(rows), rowCount: rows.length };
   }
+  if (tl.startsWith('select') && tl.includes('from interview_questions') && tl.includes('where') && tl.includes('id')) {
+    const id = params?.[0];
+    const row = getMockInterviewQuestions().find(r => r.id === Number(id));
+    return { rows: row ? [clone(row)] : [], rowCount: row ? 1 : 0 };
+  }
   if (tl.startsWith('insert into interview_questions')) {
-    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
-    const [question, answer, category] = params || [];
-    const nextId = global.__mock_interview_questions_next_id = (global.__mock_interview_questions_next_id || 1);
+    const rows = getMockInterviewQuestions();
+    const [question, answer, category, company, role] = params || [];
+    const nextId = global.__mock_interview_questions_next_id;
     const row = {
       id: nextId,
       question: question || null,
       answer: answer || null,
       category: category || null,
+      company: company || null,
+      role: role || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
     global.__mock_interview_questions_next_id = nextId + 1;
-    global.__mock_interview_questions.push(row);
+    rows.push(row);
     return { rows: [clone(row)], rowCount: 1 };
   }
   if (tl.startsWith('update interview_questions set')) {
-    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
     const m = t.match(/update\s+interview_questions\s+set\s+([\s\S]+?)\s+where\s+id\s*=\s*\$\d+/i);
     if (!m) return { rows: [], rowCount: 0 };
     const values = params || [];
     const id = values[values.length - 1];
-    const row = global.__mock_interview_questions.find(r => r.id === Number(id));
+    const row = getMockInterviewQuestions().find(r => r.id === Number(id));
     if (!row) return { rows: [], rowCount: 0 };
-    // assign first three params to question, answer, category
     row.question = values[0];
     row.answer = values[1];
     row.category = values[2];
+    row.company = values[3] || null;
+    row.role = values[4] || null;
     row.updated_at = new Date().toISOString();
     return { rows: [clone(row)], rowCount: 1 };
   }
   if (tl.startsWith('delete from interview_questions')) {
-    if (!global.__mock_interview_questions) global.__mock_interview_questions = [];
-    const id = params && params[0];
-    const idx = global.__mock_interview_questions.findIndex(r => r.id === Number(id));
+    const id = params?.[0];
+    const rows = getMockInterviewQuestions();
+    const idx = rows.findIndex(r => r.id === Number(id));
     if (idx === -1) return { rows: [], rowCount: 0 };
-    global.__mock_interview_questions.splice(idx, 1);
+    rows.splice(idx, 1);
+    return { rows: [], rowCount: 1 };
+  }
+  // Interviewer questions mock handling
+  if (tl.startsWith('select') && tl.includes('from interviewer_questions') && tl.includes('order by')) {
+    const rows = getMockInterviewerQuestions().slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    return { rows: clone(rows), rowCount: rows.length };
+  }
+  if (tl.startsWith('select') && tl.includes('from interviewer_questions') && tl.includes('where') && tl.includes('id')) {
+    const id = params?.[0];
+    const row = getMockInterviewerQuestions().find(r => r.id === Number(id));
+    return { rows: row ? [clone(row)] : [], rowCount: row ? 1 : 0 };
+  }
+  if (tl.startsWith('insert into interviewer_questions')) {
+    const rows = getMockInterviewerQuestions();
+    const [question, company, role] = params || [];
+    const nextId = global.__mock_interviewer_questions_next_id;
+    const row = {
+      id: nextId,
+      question: question || null,
+      company: company || null,
+      role: role || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    global.__mock_interviewer_questions_next_id = nextId + 1;
+    rows.push(row);
+    return { rows: [clone(row)], rowCount: 1 };
+  }
+  if (tl.startsWith('update interviewer_questions set')) {
+    const m = t.match(/update\s+interviewer_questions\s+set\s+([\s\S]+?)\s+where\s+id\s*=\s*\$\d+/i);
+    if (!m) return { rows: [], rowCount: 0 };
+    const values = params || [];
+    const id = values[values.length - 1];
+    const row = getMockInterviewerQuestions().find(r => r.id === Number(id));
+    if (!row) return { rows: [], rowCount: 0 };
+    row.question = values[0];
+    row.company = values[1] || null;
+    row.role = values[2] || null;
+    row.updated_at = new Date().toISOString();
+    return { rows: [clone(row)], rowCount: 1 };
+  }
+  if (tl.startsWith('delete from interviewer_questions')) {
+    const id = params?.[0];
+    const rows = getMockInterviewerQuestions();
+    const idx = rows.findIndex(r => r.id === Number(id));
+    if (idx === -1) return { rows: [], rowCount: 0 };
+    rows.splice(idx, 1);
     return { rows: [], rowCount: 1 };
   }
   if (tl.startsWith('update jobs set')) {
@@ -122,7 +187,7 @@ async function mockQuery(text, params) {
     return { rows: [clone(job)], rowCount: 1 };
   }
   if (tl.startsWith('delete from jobs')) {
-    const id = params && params[0];
+    const id = params?.[0];
     const idx = jobs.findIndex(j => j.id === Number(id));
     if (idx === -1) return { rows: [], rowCount: 0 };
     jobs.splice(idx, 1);
@@ -145,7 +210,7 @@ if (connectionString && process.env.FORCE_LOCAL_DB !== 'true') {
       return await pool.query(text, params);
     } catch (e) {
       // If connection refused or similar, fallback to mock DB to keep local dev usable
-      if (process.env.NODE_ENV !== 'production') console.warn('Postgres query failed, falling back to in-memory mock DB:', e && e.message);
+      if (process.env.NODE_ENV !== 'production') console.warn('Postgres query failed, falling back to in-memory mock DB:', e?.message);
       return mockQuery(text, params);
     }
   }

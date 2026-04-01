@@ -3,40 +3,43 @@ const { getNumericIdFromUrl, parseRequestBody } = require('../request-utils');
 
 async function getQuestion(_req, res, id) {
   try {
-    const result = await db.query('SELECT id, question, answer, category, company, role, created_at, updated_at FROM interview_questions WHERE id = $1 LIMIT 1', [id]);
+    const result = await db.query(
+      'SELECT id, question, company, role, created_at, updated_at FROM interviewer_questions WHERE id = $1 LIMIT 1',
+      [id]
+    );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.status(200).json(result.rows[0]);
   } catch (err) {
-    console.error('getQuestion error', err?.message);
-    res.status(500).json({ error: 'Failed to fetch interview question' });
+    console.error('getInterviewerQuestion error', err?.message);
+    res.status(500).json({ error: 'Failed to fetch interviewer question' });
   }
 }
 
 async function updateQuestion(req, res, id) {
   try {
     const body = parseRequestBody(req.body);
-    const { question, answer, category, company, role } = body || {};
+    const { question, company, role } = body || {};
     if (!question || !question.trim()) return res.status(400).json({ error: 'question is required' });
-    const params = [question.trim(), (answer || null), (category || null), (company || null), (role || null), id];
+    const params = [question.trim(), (company || null), (role || null), id];
     const result = await db.query(
-      'UPDATE interview_questions SET question = $1, answer = $2, category = $3, company = $4, role = $5 WHERE id = $6 RETURNING id, question, answer, category, company, role, created_at, updated_at',
+      'UPDATE interviewer_questions SET question = $1, company = $2, role = $3 WHERE id = $4 RETURNING id, question, company, role, created_at, updated_at',
       params
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.status(200).json(result.rows[0]);
   } catch (err) {
-    console.error('updateQuestion error', err?.message);
-    res.status(500).json({ error: 'Failed to update interview question' });
+    console.error('updateInterviewerQuestion error', err?.message);
+    res.status(500).json({ error: 'Failed to update interviewer question' });
   }
 }
 
 async function deleteQuestion(_req, res, id) {
   try {
-    await db.query('DELETE FROM interview_questions WHERE id = $1', [id]);
+    await db.query('DELETE FROM interviewer_questions WHERE id = $1', [id]);
     res.status(204).end();
   } catch (err) {
-    console.error('deleteQuestion error', err?.message);
-    res.status(500).json({ error: 'Failed to delete interview question' });
+    console.error('deleteInterviewerQuestion error', err?.message);
+    res.status(500).json({ error: 'Failed to delete interviewer question' });
   }
 }
 

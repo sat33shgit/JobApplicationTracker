@@ -1,9 +1,12 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { Client } = require('pg');
 
 async function run() {
-  const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
+  const migrationsDir = path.join(__dirname, '..', 'migrations');
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter((name) => /^\d+.*\.sql$/i.test(name))
+    .sort();
   let connectionString = process.env.DATABASE_URL || process.env.VERCEL_POSTGRES_URL;
   // If no env var is set, try loading from a local .env.local file (development convenience)
   if (!connectionString) {
@@ -21,9 +24,13 @@ async function run() {
   const client = new Client({ connectionString });
   try {
     await client.connect();
-    console.info('Connected to DB, running migration...');
-    await client.query(sql);
-    console.info('Migration applied successfully.');
+    console.info(`Connected to DB, running ${migrationFiles.length} migration(s)...`);
+    for (const file of migrationFiles) {
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      console.info(`Applying ${file}...`);
+      await client.query(sql);
+    }
+    console.info('Migrations applied successfully.');
   } catch (err) {
     console.error('Migration failed:', err);
     process.exit(1);

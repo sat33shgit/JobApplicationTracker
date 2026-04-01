@@ -42,10 +42,22 @@ const formFieldIds = {
 	answer: "interview-question-answer",
 };
 
+const interviewerFormFieldIds = {
+	company: "interviewer-question-company",
+	role: "interviewer-question-role",
+	question: "interviewer-question-question",
+};
+
 const createEmptyQuestion = (category = categories[0]) => ({
 	question: "",
 	answer: "",
 	category,
+	company: "",
+	role: "",
+});
+
+const createEmptyInterviewerQuestion = () => ({
+	question: "",
 	company: "",
 	role: "",
 });
@@ -119,26 +131,53 @@ const normalizeQuestion = (row) => {
 const normalizeQuestions = (rows) =>
 	(Array.isArray(rows) ? rows : []).map((row) => normalizeQuestion(row));
 
+const normalizeInterviewerQuestion = (row) => ({
+	...(row || {}),
+	question: row?.question || "",
+	company: row?.company || "",
+	role: row?.role || "",
+});
+
+const normalizeInterviewerQuestions = (rows) =>
+	(Array.isArray(rows) ? rows : []).map((row) => normalizeInterviewerQuestion(row));
+
 // Simple in-memory cache to avoid refetching interview questions on repeated mounts
 let cachedInterviewQuestions = null;
+let cachedInterviewerQuestions = null;
+const questionTabs = [
+	{ id: "answers", label: "Questions and Answers" },
+	{ id: "interviewer", label: "Questions to Interviewer" },
+];
 
 export function InterviewQuestions() {
 	const [questions, setQuestions] = useState([]);
+	const [interviewerQuestions, setInterviewerQuestions] = useState([]);
+	const [activeQuestionTab, setActiveQuestionTab] = useState(questionTabs[0].id);
 	const [searchTerm, setSearchTerm] = useState("");
+	const [interviewerSearchTerm, setInterviewerSearchTerm] = useState("");
 	const [showAddForm, setShowAddForm] = useState(false);
+	const [showAddInterviewerForm, setShowAddInterviewerForm] = useState(false);
 	const [editingId, setEditingId] = useState(null);
+	const [editingInterviewerId, setEditingInterviewerId] = useState(null);
 	const [expandedQuestions, setExpandedQuestions] = useState({});
 	const [newQuestion, setNewQuestion] = useState(() => createEmptyQuestion());
+	const [newInterviewerQuestion, setNewInterviewerQuestion] = useState(() =>
+		createEmptyInterviewerQuestion(),
+	);
 	const [errors, setErrors] = useState({});
+	const [interviewerErrors, setInterviewerErrors] = useState({});
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
-	const [pendingDeleteId, setPendingDeleteId] = useState(null);
+	const [pendingDelete, setPendingDelete] = useState(null);
 	const [toastMessage, setToastMessage] = useState("");
 	const [showToast, setShowToast] = useState(false);
 	const [savingQuestion, setSavingQuestion] = useState(false);
+	const [savingInterviewerQuestion, setSavingInterviewerQuestion] = useState(false);
 	const toastTimerRef = useRef(null);
 
 	const [categoryFilter, setCategoryFilter] = useState("");
 	const [companyFilter, setCompanyFilter] = useState("");
+	const [interviewerCompanyFilter, setInterviewerCompanyFilter] = useState("");
+	const [interviewerRoleFilter, setInterviewerRoleFilter] = useState("");
 
 	useEffect(() => {
 		return () => {
@@ -157,6 +196,20 @@ export function InterviewQuestions() {
 			).sort(),
 		[questions],
 	);
+	const availableInterviewerCompanies = useMemo(
+		() =>
+			Array.from(
+				new Set((interviewerQuestions || []).map((q) => (q.company || "").trim()).filter(Boolean)),
+			).sort(),
+		[interviewerQuestions],
+	);
+	const availableInterviewerRoles = useMemo(
+		() =>
+			Array.from(
+				new Set((interviewerQuestions || []).map((q) => (q.role || "").trim()).filter(Boolean)),
+			).sort(),
+		[interviewerQuestions],
+	);
 
 	const filteredQuestions = useMemo(
 		() =>
@@ -168,6 +221,23 @@ export function InterviewQuestions() {
 				return searchString.includes(searchTerm.toLowerCase());
 			}),
 		[questions, searchTerm, categoryFilter, companyFilter],
+	);
+	const filteredInterviewerQuestions = useMemo(
+		() =>
+			interviewerQuestions.filter((q) => {
+				if (interviewerCompanyFilter && (q.company || "").trim() !== interviewerCompanyFilter) {
+					return false;
+				}
+				if (interviewerRoleFilter && (q.role || "").trim() !== interviewerRoleFilter) return false;
+				const searchString = `${q.question} ${q.company || ""} ${q.role || ""}`.toLowerCase();
+				return searchString.includes(interviewerSearchTerm.toLowerCase());
+			}),
+		[
+			interviewerQuestions,
+			interviewerSearchTerm,
+			interviewerCompanyFilter,
+			interviewerRoleFilter,
+		],
 	);
 
 	useEffect(() => {
@@ -201,6 +271,37 @@ export function InterviewQuestions() {
 			mounted = false;
 		};
 	}, []);
+	useEffect(() => {
+		let mounted = true;
+
+		const setFromRows = (rows) => {
+			const normalized = normalizeInterviewerQuestions(rows);
+			if (mounted) setInterviewerQuestions(normalized);
+		};
+
+		if (cachedInterviewerQuestions) {
+			setFromRows(cachedInterviewerQuestions);
+			return () => {
+				mounted = false;
+			};
+		}
+
+		async function load() {
+			try {
+				const resp = await fetch("/api/interviewer-questions");
+				if (!resp.ok) throw new Error(`Failed to load: ${resp.status}`);
+				const data = await resp.json();
+				cachedInterviewerQuestions = Array.isArray(data) ? data : [];
+				setFromRows(cachedInterviewerQuestions);
+			} catch (err) {
+				console.error("Failed to load interviewer questions", err);
+			}
+		}
+		load();
+		return () => {
+			mounted = false;
+		};
+	}, []);
 
 	const groupedQuestions = useMemo(
 		() =>
@@ -226,17 +327,37 @@ export function InterviewQuestions() {
 		setNewQuestion(createEmptyQuestion(category));
 		setErrors({});
 	}, []);
+	const resetInterviewerQuestionForm = useCallback(() => {
+		setNewInterviewerQuestion(createEmptyInterviewerQuestion());
+		setInterviewerErrors({});
+	}, []);
 
 	const closeQuestionForm = useCallback(() => {
 		setShowAddForm(false);
 		setEditingId(null);
 		resetQuestionForm();
 	}, [resetQuestionForm]);
+	const closeInterviewerQuestionForm = useCallback(() => {
+		setShowAddInterviewerForm(false);
+		setEditingInterviewerId(null);
+		resetInterviewerQuestionForm();
+	}, [resetInterviewerQuestionForm]);
+	const showTemporaryToast = useCallback((message) => {
+		setToastMessage(message);
+		setShowToast(true);
+		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+		toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
+	}, []);
 
 	const handleInputChange = (e) => {
 		const { name, value } = e.target;
 		setNewQuestion((prev) => ({ ...prev, [name]: value }));
 		setErrors((prev) => ({ ...prev, [name]: "" }));
+	};
+	const handleInterviewerInputChange = (e) => {
+		const { name, value } = e.target;
+		setNewInterviewerQuestion((prev) => ({ ...prev, [name]: value }));
+		setInterviewerErrors((prev) => ({ ...prev, [name]: "" }));
 	};
 
 	const handleAnswerChange = (value) => {
@@ -313,6 +434,73 @@ export function InterviewQuestions() {
 			setSavingQuestion(false);
 		}
 	};
+	const handleInterviewerSubmit = async (e) => {
+		e.preventDefault();
+		const newErrors = {};
+		if (!newInterviewerQuestion.question?.trim()) newErrors.question = "Question is required";
+		if (Object.keys(newErrors).length > 0) {
+			setInterviewerErrors(newErrors);
+			return;
+		}
+		setSavingInterviewerQuestion(true);
+		try {
+			const payload = {
+				question: newInterviewerQuestion.question,
+				company: newInterviewerQuestion.company,
+				role: newInterviewerQuestion.role,
+			};
+
+			if (editingInterviewerId) {
+				const resp = await fetch(`/api/interviewer-questions/${editingInterviewerId}`, {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
+				});
+				if (!resp.ok) {
+					let body = "";
+					try {
+						body = await resp.text();
+					} catch (_error) {
+						/* ignore */
+					}
+					throw new Error(body || `Failed to update (${resp.status})`);
+				}
+				const updated = await resp.json();
+				const next = interviewerQuestions.map((q) =>
+					q.id === editingInterviewerId ? normalizeInterviewerQuestion(updated) : q,
+				);
+				cachedInterviewerQuestions = next;
+				setInterviewerQuestions(next);
+				setEditingInterviewerId(null);
+			} else {
+				const resp = await fetch("/api/interviewer-questions", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
+				});
+				if (!resp.ok) {
+					let body = "";
+					try {
+						body = await resp.text();
+					} catch (_error) {
+						/* ignore */
+					}
+					throw new Error(body || `Failed to create (${resp.status})`);
+				}
+				const created = await resp.json();
+				const next = [normalizeInterviewerQuestion(created), ...interviewerQuestions];
+				cachedInterviewerQuestions = next;
+				setInterviewerQuestions(next);
+			}
+
+			closeInterviewerQuestionForm();
+		} catch (err) {
+			console.error("Save interviewer question failed", err);
+			window.alert(`Failed to save interviewer question: ${getErrorMessage(err)}`);
+		} finally {
+			setSavingInterviewerQuestion(false);
+		}
+	};
 
 	const handleEdit = (id) => {
 		const q = questions.find((x) => x.id === id);
@@ -327,22 +515,51 @@ export function InterviewQuestions() {
 		setEditingId(id);
 		setShowAddForm(true);
 	};
+	const handleInterviewerEdit = (id) => {
+		const q = interviewerQuestions.find((x) => x.id === id);
+		if (!q) return;
+		setNewInterviewerQuestion({
+			question: q.question,
+			company: q.company || "",
+			role: q.role || "",
+		});
+		setEditingInterviewerId(id);
+		setShowAddInterviewerForm(true);
+	};
 
 	const handleAddForCategory = (category) => {
 		setEditingId(null);
 		resetQuestionForm(category);
 		setShowAddForm(true);
 	};
+	const handleAddInterviewerQuestion = () => {
+		setEditingInterviewerId(null);
+		resetInterviewerQuestionForm();
+		setShowAddInterviewerForm(true);
+	};
 
 	const handleDelete = (id) => {
-		setPendingDeleteId(id);
+		const question = questions.find((item) => item.id === id);
+		setPendingDelete({ type: "answer", id, question: question?.question || "" });
+		setShowDeleteModal(true);
+	};
+	const handleInterviewerDelete = (id) => {
+		const question = interviewerQuestions.find((item) => item.id === id);
+		setPendingDelete({ type: "interviewer", id, question: question?.question || "" });
 		setShowDeleteModal(true);
 	};
 	const confirmDelete = async () => {
-		if (pendingDeleteId == null) return;
-		const deletedText = questions.find((q) => q.id === pendingDeleteId)?.question;
+		if (!pendingDelete?.id) return;
+		const isInterviewerQuestion = pendingDelete.type === "interviewer";
+		const deletedText = pendingDelete.question;
+		const endpoint = isInterviewerQuestion
+			? `/api/interviewer-questions/${pendingDelete.id}`
+			: `/api/interview-questions/${pendingDelete.id}`;
+		const listEndpoint = isInterviewerQuestion
+			? "/api/interviewer-questions"
+			: "/api/interview-questions";
 		try {
-			const resp = await fetch(`/api/interview-questions/${pendingDeleteId}`, { method: "DELETE" });
+			const resp = await fetch(endpoint, { method: "DELETE" });
 			if (!resp.ok && resp.status !== 204) {
 				let body = "";
 				try {
@@ -352,44 +569,60 @@ export function InterviewQuestions() {
 				}
 				throw new Error(`Delete failed: ${resp.status} ${resp.statusText} ${body}`);
 			}
-			// refresh list from server to ensure consistent state
 			try {
-				const listResp = await fetch("/api/interview-questions");
+				const listResp = await fetch(listEndpoint);
 				if (listResp.ok) {
 					const data = await listResp.json();
-					const normalized = normalizeQuestions(data);
-					cachedInterviewQuestions = normalized;
-					setQuestions(normalized);
+					if (isInterviewerQuestion) {
+						const normalized = normalizeInterviewerQuestions(data);
+						cachedInterviewerQuestions = normalized;
+						setInterviewerQuestions(normalized);
+					} else {
+						const normalized = normalizeQuestions(data);
+						cachedInterviewQuestions = normalized;
+						setQuestions(normalized);
+					}
 				} else {
-					const next = questions.filter((q) => q.id !== pendingDeleteId);
+					if (isInterviewerQuestion) {
+						const next = interviewerQuestions.filter((q) => q.id !== pendingDelete.id);
+						cachedInterviewerQuestions = next;
+						setInterviewerQuestions(next);
+					} else {
+						const next = questions.filter((q) => q.id !== pendingDelete.id);
+						cachedInterviewQuestions = next;
+						setQuestions(next);
+					}
+				}
+			} catch (_error) {
+				if (isInterviewerQuestion) {
+					const next = interviewerQuestions.filter((q) => q.id !== pendingDelete.id);
+					cachedInterviewerQuestions = next;
+					setInterviewerQuestions(next);
+				} else {
+					const next = questions.filter((q) => q.id !== pendingDelete.id);
 					cachedInterviewQuestions = next;
 					setQuestions(next);
 				}
-			} catch (_error) {
-				const next = questions.filter((q) => q.id !== pendingDeleteId);
-				cachedInterviewQuestions = next;
-				setQuestions(next);
 			}
-			setExpandedQuestions((prev) => {
-				const updated = { ...prev };
-				delete updated[pendingDeleteId];
-				return updated;
-			});
-			setPendingDeleteId(null);
+			if (!isInterviewerQuestion) {
+				setExpandedQuestions((prev) => {
+					const updated = { ...prev };
+					delete updated[pendingDelete.id];
+					return updated;
+				});
+			}
+			setPendingDelete(null);
 			setShowDeleteModal(false);
-			// show toast message
-			const msg = deletedText ? `Deleted Successfully: ${deletedText}` : "Question deleted";
-			setToastMessage(msg);
-			setShowToast(true);
-			if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-			toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
+			showTemporaryToast(deletedText ? `Deleted Successfully: ${deletedText}` : "Question deleted");
 		} catch (err) {
 			console.error("Delete failed", err);
-			window.alert(`Failed to delete question: ${getErrorMessage(err)}`);
+			window.alert(
+				`Failed to delete ${isInterviewerQuestion ? "interviewer question" : "question"}: ${getErrorMessage(err)}`,
+			);
 		}
 	};
 	const cancelDelete = () => {
-		setPendingDeleteId(null);
+		setPendingDelete(null);
 		setShowDeleteModal(false);
 	};
 
@@ -413,7 +646,39 @@ export function InterviewQuestions() {
 
 	return (
 		<div className="space-y-6">
-			<div className="mb-6">
+			<div className="mb-2">
+				<div className="overflow-x-auto pb-1">
+					<div
+						role="tablist"
+						aria-label="Interview question sections"
+						className="inline-flex min-w-max items-center gap-2 rounded-xl border border-gray-200 bg-gray-100 p-1"
+					>
+						{questionTabs.map((tab) => {
+							const isActive = activeQuestionTab === tab.id;
+							return (
+								<button
+									key={tab.id}
+									type="button"
+									role="tab"
+									aria-selected={isActive}
+									onClick={() => setActiveQuestionTab(tab.id)}
+									className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+										isActive
+											? "bg-white text-blue-700 shadow-sm"
+											: "text-gray-600 hover:bg-white/60 hover:text-gray-900"
+									}`}
+								>
+									{tab.label}
+								</button>
+							);
+						})}
+					</div>
+				</div>
+			</div>
+
+			{activeQuestionTab === "answers" && (
+				<>
+					<div className="mb-6">
 				<div className="flex flex-col gap-6">
 					<div className="flex items-center justify-between">
 						<h2 className="text-2xl font-bold text-gray-900">Interview Questions and Answers</h2>
@@ -644,6 +909,158 @@ export function InterviewQuestions() {
 						))}
 				</div>
 			)}
+				</>
+			)}
+
+			{activeQuestionTab === "interviewer" && (
+				<div>
+				<div className="mb-6">
+					<div className="flex flex-col gap-6">
+						<div className="flex items-center justify-between">
+							<div>
+								<h2 className="text-2xl font-bold text-gray-900">Questions to Interviewer</h2>
+								<p className="mt-1 text-sm text-gray-600">
+									Store the questions you want to ask the interviewer. This section does not
+									include answers.
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={handleAddInterviewerQuestion}
+								className="cursor-pointer flex items-center justify-center space-x-3 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"
+							>
+								<Plus className="h-5 w-5" />
+								<span>Add Question</span>
+							</button>
+						</div>
+						<div className="rounded-lg border border-gray-200 bg-white p-6 shadow-md">
+							<div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-6">
+								<div className="min-w-0 flex-1">
+									<input
+										type="text"
+										placeholder="Search interviewer questions..."
+										value={interviewerSearchTerm}
+										onChange={(e) => setInterviewerSearchTerm(e.target.value)}
+										className="w-full rounded-md border border-gray-300 bg-white px-4 py-2"
+									/>
+								</div>
+
+								<div className="flex min-w-0 max-w-full shrink-0 flex-nowrap items-center gap-6 overflow-x-auto">
+									<span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-700">
+										Filters:
+									</span>
+									<div className="w-56 shrink-0">
+										<select
+											value={interviewerCompanyFilter}
+											onChange={(e) => setInterviewerCompanyFilter(e.target.value)}
+											aria-label="Interviewer question company"
+											className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+										>
+											<option value="">All companies</option>
+											{availableInterviewerCompanies.map((company) => (
+												<option key={company} value={company}>
+													{company}
+												</option>
+											))}
+										</select>
+									</div>
+
+									<div className="w-56 shrink-0">
+										<select
+											value={interviewerRoleFilter}
+											onChange={(e) => setInterviewerRoleFilter(e.target.value)}
+											aria-label="Interviewer question role"
+											className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+										>
+											<option value="">All roles</option>
+											{availableInterviewerRoles.map((role) => (
+												<option key={role} value={role}>
+													{role}
+												</option>
+											))}
+										</select>
+									</div>
+
+									<button
+										type="button"
+										onClick={() => {
+											setInterviewerSearchTerm("");
+											setInterviewerCompanyFilter("");
+											setInterviewerRoleFilter("");
+										}}
+										className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm leading-normal text-gray-700 hover:bg-gray-100"
+										aria-label="Clear interviewer question search and filters"
+									>
+										<X className="h-4 w-4" />
+										Clear All
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{filteredInterviewerQuestions.length > 0 && (
+					<div className="mb-4 text-md font-semibold text-gray-600">
+						Showing {filteredInterviewerQuestions.length} question
+						{filteredInterviewerQuestions.length !== 1 ? "s" : ""}
+					</div>
+				)}
+
+				{filteredInterviewerQuestions.length === 0 ? (
+					<div className="text-center py-12 text-gray-500">
+						{interviewerSearchTerm || interviewerCompanyFilter || interviewerRoleFilter
+							? "No interviewer questions found matching your search."
+							: "No interviewer questions yet. Add your first question!"}
+					</div>
+				) : (
+					<div className="space-y-3">
+						{filteredInterviewerQuestions.map((question) => (
+							<motion.div
+								key={question.id}
+								initial={{ opacity: 0 }}
+								animate={{ opacity: 1 }}
+								className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+							>
+								<div className="flex items-start justify-between gap-4">
+									<div className="min-w-0">
+										<div className="font-medium text-gray-900">{question.question}</div>
+										{question.company || question.role ? (
+											<div className="mt-1 text-sm text-gray-500">
+												{question.company ? question.company : ""}
+												{question.role
+													? question.company
+														? ` (${question.role})`
+														: question.role
+													: ""}
+											</div>
+										) : null}
+									</div>
+									<div className="flex items-center space-x-2">
+										<button
+											type="button"
+											onClick={() => handleInterviewerEdit(question.id)}
+											className="cursor-pointer p-1 text-blue-600 hover:bg-blue-50 rounded"
+											title="Edit interviewer question"
+										>
+											<Edit className="h-4 w-4" />
+										</button>
+										<button
+											type="button"
+											onClick={() => handleInterviewerDelete(question.id)}
+											className="cursor-pointer p-1 text-red-600 hover:bg-red-50 rounded"
+											title="Delete interviewer question"
+										>
+											<Trash2 className="h-4 w-4" />
+										</button>
+									</div>
+								</div>
+							</motion.div>
+						))}
+					</div>
+				)}
+				</div>
+			)}
 
 			{showAddForm && (
 				<div
@@ -802,6 +1219,127 @@ export function InterviewQuestions() {
 				</div>
 			)}
 
+			{showAddInterviewerForm && (
+				<div
+					className="fixed inset-0 flex items-center justify-center p-4 z-50 bg-black/10"
+					style={{ backdropFilter: "blur(6px)" }}
+				>
+					<motion.div
+						initial={{ opacity: 0, scale: 0.9 }}
+						animate={{ opacity: 1, scale: 1 }}
+						className="bg-white rounded-lg shadow-xl mx-auto overflow-y-auto"
+						style={{ width: "min(92vw, 840px)", maxHeight: "90vh" }}
+					>
+						<div className="p-6">
+							<div className="flex justify-between items-center mb-6">
+								<h2 className="text-xl font-semibold">
+									{editingInterviewerId
+										? "Edit Question to Interviewer"
+										: "Add Question to Interviewer"}
+								</h2>
+								<button
+									type="button"
+									disabled={savingInterviewerQuestion}
+									onClick={closeInterviewerQuestionForm}
+									className="cursor-pointer text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+								>
+									<X className="h-6 w-6" />
+								</button>
+							</div>
+
+							<form onSubmit={handleInterviewerSubmit} className="space-y-4">
+								<div>
+									<label
+										htmlFor={interviewerFormFieldIds.company}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Company (optional)
+									</label>
+									<input
+										id={interviewerFormFieldIds.company}
+										name="company"
+										value={newInterviewerQuestion.company}
+										onChange={handleInterviewerInputChange}
+										placeholder="Company name (optional)"
+										disabled={savingInterviewerQuestion}
+										className="w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
+									/>
+								</div>
+
+								<div>
+									<label
+										htmlFor={interviewerFormFieldIds.role}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Role (optional)
+									</label>
+									<input
+										id={interviewerFormFieldIds.role}
+										name="role"
+										value={newInterviewerQuestion.role}
+										onChange={handleInterviewerInputChange}
+										placeholder="Role or job title (optional)"
+										disabled={savingInterviewerQuestion}
+										className="w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
+									/>
+								</div>
+
+								<div>
+									<label
+										htmlFor={interviewerFormFieldIds.question}
+										className="block text-sm font-medium text-gray-700 mb-1"
+									>
+										Question *
+									</label>
+									<textarea
+										id={interviewerFormFieldIds.question}
+										name="question"
+										value={newInterviewerQuestion.question}
+										onChange={handleInterviewerInputChange}
+										rows={4}
+										placeholder="Enter the question you want to ask the interviewer..."
+										disabled={savingInterviewerQuestion}
+										className={`w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed ${interviewerErrors.question ? "border-red-500" : ""}`}
+									/>
+									{interviewerErrors.question && (
+										<p className="text-red-500 text-sm mt-1">{interviewerErrors.question}</p>
+									)}
+								</div>
+
+								<div className="flex justify-end pt-4 gap-6">
+									<button
+										type="button"
+										disabled={savingInterviewerQuestion}
+										onClick={closeInterviewerQuestionForm}
+										className="cursor-pointer px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										Cancel
+									</button>
+									<button
+										type="submit"
+										disabled={savingInterviewerQuestion}
+										className="inline-flex min-w-[10.5rem] cursor-pointer items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-80"
+									>
+										{savingInterviewerQuestion ? (
+											<>
+												<Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+												<span>
+													{editingInterviewerId ? "Updating..." : "Saving..."}
+												</span>
+											</>
+										) : (
+											<span>
+												{editingInterviewerId ? "Update Question" : "Add Question"}
+											</span>
+										)}
+									</button>
+								</div>
+							</form>
+						</div>
+					</motion.div>
+				</div>
+			)}
+
 			{showDeleteModal && (
 				<div
 					className="fixed inset-0 flex items-center justify-center p-6 z-50 bg-black/20"
@@ -814,17 +1352,19 @@ export function InterviewQuestions() {
 						style={{ width: "33vw", minWidth: "360px", maxWidth: "900px" }}
 					>
 						<div className="p-6">
-							<h3 className="text-lg font-semibold mb-2">Delete Question</h3>
+							<h3 className="text-lg font-semibold mb-2">
+								Delete {pendingDelete?.type === "interviewer" ? "Question to Interviewer" : "Question"}
+							</h3>
 							<p className="text-sm text-gray-600 mb-4">
 								Are you sure you want to delete this question? This will remove the question from
 								your saved list.
 							</p>
 
-							{pendingDeleteId != null && (
+							{pendingDelete?.question ? (
 								<div className="mb-4 p-3 bg-gray-50 rounded text-sm text-gray-800 font-medium">
-									{questions.find((q) => q.id === pendingDeleteId)?.question}
+									{pendingDelete.question}
 								</div>
-							)}
+							) : null}
 
 							<div className="border-t border-gray-200 mt-4 pt-4 flex justify-end items-center gap-6">
 								<button

@@ -1,7 +1,7 @@
-const http = require('http');
-const url = require('url');
-const fs = require('fs');
-const path = require('path');
+const http = require('node:http');
+const url = require('node:url');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // Load local env files if present so DATABASE_URL is available to the dev server
 try {
@@ -14,17 +14,17 @@ try {
   if (fs.existsSync(envPath)) {
     dotenv.config({ path: envPath });
   }
-} catch (e) {
+} catch (_e) {
   // dotenv not installed — attempt simple manual .env.local parse as a fallback
   try {
     const envPathLocal = path.join(__dirname, '.env.local');
     if (fs.existsSync(envPathLocal)) {
       const contents = fs.readFileSync(envPathLocal, 'utf8');
-      contents.split(/\r?\n/).forEach(line => {
+      for (const line of contents.split(/\r?\n/)) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return;
+        if (!trimmed || trimmed.startsWith('#')) continue;
         const idx = trimmed.indexOf('=');
-        if (idx === -1) return;
+        if (idx === -1) continue;
         const key = trimmed.slice(0, idx).trim();
         let val = trimmed.slice(idx + 1).trim();
         if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
@@ -32,10 +32,10 @@ try {
         }
         // Always set/overwrite from local .env so local config takes precedence during dev
         process.env[key] = val;
-      });
+      }
       // loaded env from .env.local (manual)
     }
-  } catch (err) {
+  } catch (_err) {
     // ignore
   }
 }
@@ -53,7 +53,9 @@ const API_ROOT = path.join(__dirname, 'api');
 function parseJSONBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', chunk => data += chunk);
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
     req.on('end', () => {
       if (!data) return resolve(null);
       try {
@@ -62,7 +64,11 @@ function parseJSONBody(req) {
           resolve(JSON.parse(data));
         } else {
           // fallback: try JSON parse
-          try { resolve(JSON.parse(data)); } catch (e) { resolve(data); }
+          try {
+            resolve(JSON.parse(data));
+          } catch (_e) {
+            resolve(data);
+          }
         }
       } catch (err) {
         reject(err);
@@ -74,12 +80,51 @@ function parseJSONBody(req) {
 
 function makeRes(originalRes) {
   const res = originalRes;
-  res.status = function(code) { res.statusCode = code; return res; };
-  res.json = function(obj) {
+  res.status = (code) => {
+    res.statusCode = code;
+    return res;
+  };
+  res.json = (obj) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(obj));
   };
   return res;
+}
+
+function clearModuleCache(modulePath) {
+  if (!fs.existsSync(modulePath)) return;
+  try {
+    delete require.cache[require.resolve(modulePath)];
+  } catch (_error) {
+    // ignore cache misses during local reloads
+  }
+}
+
+function getHandlerPath(resource, id) {
+  const resourceDir = path.join(API_ROOT, resource);
+  if (!fs.existsSync(resourceDir)) return null;
+  if (!id) return path.join(resourceDir, 'index.js');
+
+  const explicitHandler = path.join(resourceDir, `${id}.js`);
+  const genericHandler = path.join(resourceDir, '[id].js');
+  if (fs.existsSync(explicitHandler)) return explicitHandler;
+  if (fs.existsSync(genericHandler)) return genericHandler;
+  return null;
+}
+
+async function handleApiResource(resource, id, pathname, adapterReq, adapterRes, dependencies = ['db.js']) {
+  const handlerPath = getHandlerPath(resource, id);
+  if (!handlerPath || !fs.existsSync(handlerPath)) return false;
+
+  clearModuleCache(handlerPath);
+  for (const dependency of dependencies) {
+    clearModuleCache(path.join(API_ROOT, dependency));
+  }
+
+  if (id) adapterReq.url = pathname;
+  const handler = require(handlerPath);
+  await handler(adapterReq, adapterRes);
+  return true;
 }
 
 async function routeApi(req, res) {
@@ -110,114 +155,22 @@ async function routeApi(req, res) {
 
     const adapterRes = makeRes(res);
 
-    if (resource === 'jobs') {
-      if (!id) {
-        // use api/jobs/index.js
-        const handlerPath = path.join(API_ROOT, 'jobs', 'index.js');
-        if (!fs.existsSync(handlerPath)) return false;
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      } else {
-        // Prefer explicit handler file (e.g., api/jobs/create.js) over generic [id].js
-        const explicitHandler = path.join(API_ROOT, 'jobs', `${id}.js`);
-        const genericHandler = path.join(API_ROOT, 'jobs', '[id].js');
-        let handlerPath = null;
-        if (fs.existsSync(explicitHandler)) handlerPath = explicitHandler;
-        else if (fs.existsSync(genericHandler)) handlerPath = genericHandler;
-        else return false;
-
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        // ensure req.url is full path so handler can parse id
-        adapterReq.url = pathname;
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      }
-    }
+    if (resource === 'jobs') return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
 
     if (resource === 'uploads') {
-      if (!id) {
-        const handlerPath = path.join(API_ROOT, 'uploads', 'index.js');
-        if (!fs.existsSync(handlerPath)) return false;
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        const blobPath = path.join(API_ROOT, 'blob.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        if (fs.existsSync(blobPath) && require.cache[blobPath]) delete require.cache[blobPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        if (fs.existsSync(blobPath)) try { delete require.cache[require.resolve(blobPath)]; } catch (e) {}
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      } else {
-        // Prefer explicit handler file (e.g., api/uploads/create.js) over generic [id].js
-        const explicitHandler = path.join(API_ROOT, 'uploads', `${id}.js`);
-        const genericHandler = path.join(API_ROOT, 'uploads', '[id].js');
-        let handlerPath = null;
-        if (fs.existsSync(explicitHandler)) handlerPath = explicitHandler;
-        else if (fs.existsSync(genericHandler)) handlerPath = genericHandler;
-        else return false;
-
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        const blobPath = path.join(API_ROOT, 'blob.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        if (fs.existsSync(blobPath) && require.cache[blobPath]) delete require.cache[blobPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        if (fs.existsSync(blobPath)) try { delete require.cache[require.resolve(blobPath)]; } catch (e) {}
-        adapterReq.url = pathname;
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      }
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes, ['db.js', 'blob.js']);
     }
 
     if (resource === 'interview-questions') {
-      if (!id) {
-        const handlerPath = path.join(API_ROOT, 'interview-questions', 'index.js');
-        if (!fs.existsSync(handlerPath)) return false;
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      } else {
-        const explicitHandler = path.join(API_ROOT, 'interview-questions', `${id}.js`);
-        const genericHandler = path.join(API_ROOT, 'interview-questions', '[id].js');
-        let handlerPath = null;
-        if (fs.existsSync(explicitHandler)) handlerPath = explicitHandler;
-        else if (fs.existsSync(genericHandler)) handlerPath = genericHandler;
-        else return false;
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
+    }
 
-        if (require.cache[handlerPath]) delete require.cache[handlerPath];
-        const dbPath = path.join(API_ROOT, 'db.js');
-        if (fs.existsSync(dbPath) && require.cache[dbPath]) delete require.cache[dbPath];
-        delete require.cache[require.resolve(handlerPath)];
-        if (fs.existsSync(dbPath)) try { delete require.cache[require.resolve(dbPath)]; } catch (e) {}
-        adapterReq.url = pathname;
-        const handler = require(handlerPath);
-        await handler(adapterReq, adapterRes);
-        return true;
-      }
+    if (resource === 'interviewer-questions') {
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
     }
 
     // other api resources can be added similarly
-  } catch (err) {
+  } catch (_err) {
     if (process.env.NODE_ENV !== 'production') console.error('API handler error', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
