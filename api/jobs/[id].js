@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../../lib/server/db');
 
 module.exports = async function (req, res) {
   const url = require('url');
@@ -99,7 +99,7 @@ module.exports = async function (req, res) {
         // Load blob helper lazily so we don't require it for simple GETs
         let blob = null;
         try {
-          blob = require('../blob');
+          blob = require('../../lib/server/blob');
         } catch (re) {
           // If blob helper can't be loaded, log and continue — attachments will be removed from DB.
           if (process.env.NODE_ENV !== 'production') console.warn('blob helper load failed, skipping provider deletes', re && re.message);

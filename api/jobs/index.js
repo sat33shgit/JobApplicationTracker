@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../../lib/server/db');
 
 async function listJobs(req, res) {
   try {
@@ -96,7 +96,7 @@ async function uploadAttachment(req, res) {
     const { jobId, filename, contentBase64, contentType } = req.body;
     if (!filename || !contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
     const buffer = Buffer.from(contentBase64, 'base64');
-    const blob = require('../blob');
+    const blob = require('../../lib/server/blob');
     const saved = await blob.save({ filename, buffer, contentType });
     const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
     const result = await db.query(

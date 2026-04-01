@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../../lib/server/db');
 const path = require('path');
 const fs = require('fs');
 
@@ -20,7 +20,7 @@ module.exports = async function (req, res) {
       // Try to delete from storage (R2 or local)
       let blob = null;
       try {
-        blob = require('../blob');
+        blob = require('../../lib/server/blob');
       } catch (e) {
         if (process.env.NODE_ENV !== 'production') console.warn('blob helper load failed, skipping storage delete', e && e.message);
       }
@@ -56,7 +56,7 @@ module.exports = async function (req, res) {
     // If we have a storage key (R2), try to produce a signed GET URL and redirect to it
     if (att.storage_key) {
       try {
-        const blob = require('../blob');
+        const blob = require('../../lib/server/blob');
         // Use createSignedGetUrl for reading files (not createSignedUrl which is for uploads)
         if (typeof blob.createSignedGetUrl === 'function') {
           const signed = await blob.createSignedGetUrl(att.storage_key, { contentType: att.content_type });

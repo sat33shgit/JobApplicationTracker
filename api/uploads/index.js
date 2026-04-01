@@ -1,5 +1,5 @@
-const db = require('../db');
-const blob = require('../blob');
+const db = require('../../lib/server/db');
+const blob = require('../../lib/server/blob');
 const fs = require('fs');
 const path = require('path');
 

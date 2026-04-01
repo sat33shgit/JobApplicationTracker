@@ -22,7 +22,7 @@ loadEnvManual(path.join(__dirname, '..', '.env.local'));
 
 (async () => {
   try {
-    const db = require('../api/db');
+    const db = require('../lib/server/db');
     console.info('db.pool present?', !!db.pool);
     const res = await db.query('SELECT 1');
     console.info('SELECT 1 result:', res.rows);

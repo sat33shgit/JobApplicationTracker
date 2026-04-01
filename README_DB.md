@@ -7,7 +7,7 @@ Overview
 Files added
 - `migrations/001_init.sql` — initial schema for `jobs`, `notes`, `tags`, and `job_tags`.
 - `scripts/migrate.js` — Node migration runner (reads `DATABASE_URL` env var).
-- `api/db.js` — DB helper that reuses a `pg` Pool across invocations.
+- `lib/server/db.js` — DB helper that reuses a `pg` Pool across invocations.
 - `api/jobs/index.js` — `GET /api/jobs` and `POST /api/jobs`.
 - `api/jobs/[id].js` — `GET/PUT/PATCH/DELETE /api/jobs/:id`.
 

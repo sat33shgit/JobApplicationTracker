@@ -49,6 +49,7 @@ if (process.env.DATABASE_URL) {
 }
 
 const API_ROOT = path.join(__dirname, 'api');
+const SERVER_LIB_ROOT = path.join(__dirname, 'lib', 'server');
 
 function parseJSONBody(req) {
   return new Promise((resolve, reject) => {
@@ -118,7 +119,7 @@ async function handleApiResource(resource, id, pathname, adapterReq, adapterRes,
 
   clearModuleCache(handlerPath);
   for (const dependency of dependencies) {
-    clearModuleCache(path.join(API_ROOT, dependency));
+    clearModuleCache(path.join(SERVER_LIB_ROOT, dependency));
   }
 
   if (id) adapterReq.url = pathname;
@@ -155,22 +156,24 @@ async function routeApi(req, res) {
 
     const adapterRes = makeRes(res);
 
-    if (resource === 'jobs') return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
+    if (resource === 'jobs') {
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes, ['db.js', 'blob.js']);
+    }
 
     if (resource === 'uploads') {
       return handleApiResource(resource, id, pathname, adapterReq, adapterRes, ['db.js', 'blob.js']);
     }
 
     if (resource === 'interview-questions') {
-      return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes, ['db.js', 'request-utils.js']);
     }
 
     if (resource === 'interviewer-questions') {
-      return handleApiResource(resource, id, pathname, adapterReq, adapterRes);
+      return handleApiResource(resource, id, pathname, adapterReq, adapterRes, ['db.js', 'request-utils.js']);
     }
 
     // other api resources can be added similarly
-  } catch (_err) {
+  } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('API handler error', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');

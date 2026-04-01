@@ -1,5 +1,5 @@
-const db = require('../db');
-const { getNumericIdFromUrl, parseRequestBody } = require('../request-utils');
+const db = require('../../lib/server/db');
+const { getNumericIdFromUrl, parseRequestBody } = require('../../lib/server/request-utils');
 
 async function getQuestion(_req, res, id) {
   try {

@@ -1,4 +1,4 @@
-const blob = require('./blob');
+const blob = require('../lib/server/blob');
 
 module.exports = async function (req, res) {
   if (req.method !== 'GET') {

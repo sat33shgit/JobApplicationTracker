@@ -1,5 +1,5 @@
-const db = require('../db');
-const { parseRequestBody } = require('../request-utils');
+const db = require('../../lib/server/db');
+const { parseRequestBody } = require('../../lib/server/request-utils');
 
 async function listQuestions(_req, res) {
   try {

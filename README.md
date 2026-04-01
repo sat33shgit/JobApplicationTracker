@@ -108,7 +108,7 @@ npm run serve
 Notes:
 
 - The local API adapter is implemented in `dev-server.js` and routes requests to files under the `api/` folder.
-- File uploads default to `public/uploads/` but can be configured to use Cloudflare R2 or Vercel Blob via environment variables. See `api/blob.js` for details.
+- File uploads default to `public/uploads/` but can be configured to use Cloudflare R2 or Vercel Blob via environment variables. See `lib/server/blob.js` for details.
 - Database migrations live in `migrations/` and are applied with `npm run migrate`.
 
-For more context, inspect `dev-server.js`, `api/blob.js`, and the `api/` handlers.
+For more context, inspect `dev-server.js`, `lib/server/blob.js`, and the `api/` handlers.
