@@ -63,6 +63,13 @@ const createEmptyInterviewerQuestion = () => ({
 });
 
 const getErrorMessage = (error) => error?.message || "unknown error";
+const formActionRowStyle = { columnGap: "2rem", rowGap: "0.75rem" };
+const focusFieldOnNextFrame = (inputRef) => {
+	if (typeof window === "undefined") return;
+	window.requestAnimationFrame(() => {
+		inputRef.current?.focus();
+	});
+};
 
 const renderAnswerNode = (node, key) => {
 	if (node.nodeType === Node.TEXT_NODE) return node.textContent;
@@ -173,6 +180,8 @@ export function InterviewQuestions() {
 	const [savingQuestion, setSavingQuestion] = useState(false);
 	const [savingInterviewerQuestion, setSavingInterviewerQuestion] = useState(false);
 	const toastTimerRef = useRef(null);
+	const questionInputRef = useRef(null);
+	const interviewerQuestionInputRef = useRef(null);
 
 	const [categoryFilter, setCategoryFilter] = useState("");
 	const [companyFilter, setCompanyFilter] = useState("");
@@ -323,12 +332,20 @@ export function InterviewQuestions() {
 	};
 	const collapseAll = () => setExpandedQuestions({});
 
-	const resetQuestionForm = useCallback((category = categories[0]) => {
-		setNewQuestion(createEmptyQuestion(category));
+	const resetQuestionForm = useCallback((category = categories[0], preservedValues = {}) => {
+		setNewQuestion({
+			...createEmptyQuestion(category),
+			company: preservedValues.company || "",
+			role: preservedValues.role || "",
+		});
 		setErrors({});
 	}, []);
-	const resetInterviewerQuestionForm = useCallback(() => {
-		setNewInterviewerQuestion(createEmptyInterviewerQuestion());
+	const resetInterviewerQuestionForm = useCallback((preservedValues = {}) => {
+		setNewInterviewerQuestion({
+			...createEmptyInterviewerQuestion(),
+			company: preservedValues.company || "",
+			role: preservedValues.role || "",
+		});
 		setInterviewerErrors({});
 	}, []);
 
@@ -365,8 +382,7 @@ export function InterviewQuestions() {
 		setErrors((prev) => ({ ...prev, answer: "" }));
 	};
 
-	const handleSubmit = async (e) => {
-		e.preventDefault();
+	const saveQuestion = async ({ closeAfterSave = true } = {}) => {
 		const newErrors = {};
 		if (!newQuestion.question?.trim()) newErrors.question = "Question is required";
 		if (!answerHasContent(newQuestion.answer)) newErrors.answer = "Answer is required";
@@ -384,6 +400,7 @@ export function InterviewQuestions() {
 				company: newQuestion.company,
 				role: newQuestion.role,
 			};
+			let nextFormValues = null;
 
 			if (editingId) {
 				const resp = await fetch(`/api/interview-questions/${editingId}`, {
@@ -404,7 +421,6 @@ export function InterviewQuestions() {
 				const next = questions.map((q) => (q.id === editingId ? normalizeQuestion(updated) : q));
 				cachedInterviewQuestions = next;
 				setQuestions(next);
-				setEditingId(null);
 			} else {
 				const resp = await fetch("/api/interview-questions", {
 					method: "POST",
@@ -424,9 +440,22 @@ export function InterviewQuestions() {
 				const next = [normalizeQuestion(created), ...questions];
 				cachedInterviewQuestions = next;
 				setQuestions(next);
+				nextFormValues = {
+					category: created.category || payload.category,
+					company: created.company || payload.company || "",
+					role: created.role || payload.role || "",
+				};
 			}
 
-			closeQuestionForm();
+			if (closeAfterSave || editingId) {
+				closeQuestionForm();
+			} else {
+				resetQuestionForm(nextFormValues?.category || payload.category, {
+					company: nextFormValues?.company || "",
+					role: nextFormValues?.role || "",
+				});
+				focusFieldOnNextFrame(questionInputRef);
+			}
 		} catch (err) {
 			console.error("Save failed", err);
 			window.alert(`Failed to save question: ${getErrorMessage(err)}`);
@@ -434,8 +463,14 @@ export function InterviewQuestions() {
 			setSavingQuestion(false);
 		}
 	};
-	const handleInterviewerSubmit = async (e) => {
+	const handleSubmit = async (e) => {
 		e.preventDefault();
+		await saveQuestion();
+	};
+	const handleSaveAndAddMore = async () => {
+		await saveQuestion({ closeAfterSave: false });
+	};
+	const saveInterviewerQuestion = async ({ closeAfterSave = true } = {}) => {
 		const newErrors = {};
 		if (!newInterviewerQuestion.question?.trim()) newErrors.question = "Question is required";
 		if (Object.keys(newErrors).length > 0) {
@@ -449,6 +484,7 @@ export function InterviewQuestions() {
 				company: newInterviewerQuestion.company,
 				role: newInterviewerQuestion.role,
 			};
+			let nextFormValues = null;
 
 			if (editingInterviewerId) {
 				const resp = await fetch(`/api/interviewer-questions/${editingInterviewerId}`, {
@@ -471,7 +507,6 @@ export function InterviewQuestions() {
 				);
 				cachedInterviewerQuestions = next;
 				setInterviewerQuestions(next);
-				setEditingInterviewerId(null);
 			} else {
 				const resp = await fetch("/api/interviewer-questions", {
 					method: "POST",
@@ -491,15 +526,34 @@ export function InterviewQuestions() {
 				const next = [normalizeInterviewerQuestion(created), ...interviewerQuestions];
 				cachedInterviewerQuestions = next;
 				setInterviewerQuestions(next);
+				nextFormValues = {
+					company: created.company || payload.company || "",
+					role: created.role || payload.role || "",
+				};
 			}
 
-			closeInterviewerQuestionForm();
+			if (closeAfterSave || editingInterviewerId) {
+				closeInterviewerQuestionForm();
+			} else {
+				resetInterviewerQuestionForm({
+					company: nextFormValues?.company || "",
+					role: nextFormValues?.role || "",
+				});
+				focusFieldOnNextFrame(interviewerQuestionInputRef);
+			}
 		} catch (err) {
 			console.error("Save interviewer question failed", err);
 			window.alert(`Failed to save interviewer question: ${getErrorMessage(err)}`);
 		} finally {
 			setSavingInterviewerQuestion(false);
 		}
+	};
+	const handleInterviewerSubmit = async (e) => {
+		e.preventDefault();
+		await saveInterviewerQuestion();
+	};
+	const handleInterviewerSaveAndAddMore = async () => {
+		await saveInterviewerQuestion({ closeAfterSave: false });
 	};
 
 	const handleEdit = (id) => {
@@ -1014,7 +1068,7 @@ export function InterviewQuestions() {
 							: "No interviewer questions yet. Add your first question!"}
 					</div>
 				) : (
-					<div className="space-y-3">
+					<div className="space-y-2">
 						{filteredInterviewerQuestions.map((question) => (
 							<motion.div
 								key={question.id}
@@ -1158,6 +1212,7 @@ export function InterviewQuestions() {
 									</label>
 									<textarea
 										id={formFieldIds.question}
+										ref={questionInputRef}
 										name="question"
 										value={newQuestion.question}
 										onChange={handleInputChange}
@@ -1189,7 +1244,10 @@ export function InterviewQuestions() {
 									{errors.answer && <p className="text-red-500 text-sm mt-1">{errors.answer}</p>}
 								</div>
 
-								<div className="flex justify-end pt-4 gap-6">
+								<div
+									className="flex flex-wrap justify-end pt-4"
+									style={formActionRowStyle}
+								>
 									<button
 										type="button"
 										disabled={savingQuestion}
@@ -1198,6 +1256,16 @@ export function InterviewQuestions() {
 									>
 										Cancel
 									</button>
+									{!editingId && (
+										<button
+											type="button"
+											disabled={savingQuestion}
+											onClick={handleSaveAndAddMore}
+											className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-blue-200 px-4 py-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+										>
+											Save and Add more
+										</button>
+									)}
 									<button
 										type="submit"
 										disabled={savingQuestion}
@@ -1209,7 +1277,7 @@ export function InterviewQuestions() {
 												<span>{editingId ? "Updating…" : "Saving…"}</span>
 											</>
 										) : (
-											<span>{editingId ? "Update Question" : "Add Question"}</span>
+											<span>{editingId ? "Update Question" : "Save and Close"}</span>
 										)}
 									</button>
 								</div>
@@ -1293,6 +1361,7 @@ export function InterviewQuestions() {
 									</label>
 									<textarea
 										id={interviewerFormFieldIds.question}
+										ref={interviewerQuestionInputRef}
 										name="question"
 										value={newInterviewerQuestion.question}
 										onChange={handleInterviewerInputChange}
@@ -1306,7 +1375,10 @@ export function InterviewQuestions() {
 									)}
 								</div>
 
-								<div className="flex justify-end pt-4 gap-6">
+								<div
+									className="flex flex-wrap justify-end pt-4"
+									style={formActionRowStyle}
+								>
 									<button
 										type="button"
 										disabled={savingInterviewerQuestion}
@@ -1315,6 +1387,16 @@ export function InterviewQuestions() {
 									>
 										Cancel
 									</button>
+									{!editingInterviewerId && (
+										<button
+											type="button"
+											disabled={savingInterviewerQuestion}
+											onClick={handleInterviewerSaveAndAddMore}
+											className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-blue-200 px-4 py-2 text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+										>
+											Save and Add more
+										</button>
+									)}
 									<button
 										type="submit"
 										disabled={savingInterviewerQuestion}
@@ -1329,7 +1411,7 @@ export function InterviewQuestions() {
 											</>
 										) : (
 											<span>
-												{editingInterviewerId ? "Update Question" : "Add Question"}
+												{editingInterviewerId ? "Update Question" : "Save and Close"}
 											</span>
 										)}
 									</button>
