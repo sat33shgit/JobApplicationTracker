@@ -39,12 +39,71 @@ import * as XLSX from "xlsx";
 import { InterviewTimeline } from "./components/InterviewTimeline";
 import { InterviewQuestions } from "./components/InterviewQuestions";
 
+type ApplicationFile = {
+	id?: number;
+	name: string;
+	url?: string;
+	path?: string;
+	size?: number;
+	contentType?: string;
+	file?: File;
+	[key: string]: unknown;
+};
+
+type ApplicationContact = {
+	name?: string;
+	email?: string;
+	phone?: string;
+	[key: string]: unknown;
+};
+
+type ApplicationRecord = {
+	id: number;
+	companyId: number;
+	role: string;
+	dateApplied: string;
+	interviewDate?: string;
+	dateAppliedTs?: number;
+	status: string;
+	notes?: string;
+	files: ApplicationFile[];
+	contacts: ApplicationContact[];
+	statusNotes?: string;
+	track?: string;
+	[key: string]: unknown;
+};
+
+type ApplicationGroup = {
+	companyId: number;
+	companyName: string;
+	applications: ApplicationRecord[];
+};
+
+type PieLabelProps = {
+	cx?: number;
+	cy?: number;
+	midAngle?: number;
+	outerRadius?: number;
+	percent?: number;
+	index?: number;
+};
+
+type BarLabelProps = {
+	x?: number;
+	y?: number;
+	width?: number;
+	height?: number;
+	value?: number | string;
+};
+
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
 // Accepts `YYYY-MM-DD`, full ISO strings, or `Date` objects. When given full
 // ISO datetimes from the server, interpret the date portion using UTC to avoid
 // timezone-based day shifts.
 const formatDisplayDate = (input: string | Date) => {
-	let y: number, mIndex: number, d: number;
+	let y: number;
+	let mIndex: number;
+	let d: number;
 
 	if (input instanceof Date) {
 		y = input.getFullYear();
@@ -80,7 +139,7 @@ const formatDisplayDate = (input: string | Date) => {
 
 // Initial empty arrays for company and application data
 const initialCompanies: Array<{ id: number; name: string }> = [];
-const initialApplications: Array<any> = [];
+const initialApplications: ApplicationRecord[] = [];
 
 // Maximum allowed file size for each upload (5 MB)
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -117,23 +176,34 @@ const COLORS = [
 	"#6B7280", // Closed (slate gray)
 ];
 
+const toDateBoundaryTimestamp = (value?: string, endOfDay = false) => {
+	if (!value) return 0;
+	return new Date(`${value}${endOfDay ? "T23:59:59" : "T00:00:00"}`).getTime();
+};
+
+const getApplicationAppliedTimestamp = (app: Partial<ApplicationRecord>) =>
+	app.dateAppliedTs || toDateBoundaryTimestamp(app.dateApplied);
+
+const normalizeCompanyName = (value?: string | null) => {
+	const normalized = String(value || "").trim();
+	return normalized || "Unknown";
+};
+
 // Function to generate statistics based on date range, timeframe and optional status
 const generateStats = (
-	applications,
+	applications: ApplicationRecord[],
 	startDate?: string,
 	endDate?: string,
-	timeframe: string = "daily",
+	timeframe = "daily",
 	status?: string,
 ) => {
 	// Filter applications by date range if provided (use numeric timestamps for speed)
 	let filteredApps = [...applications];
 	if (startDate && endDate) {
-		const sTs = new Date(startDate + "T00:00:00").getTime();
-		const eTs = new Date(endDate + "T23:59:59").getTime();
+		const sTs = toDateBoundaryTimestamp(startDate);
+		const eTs = toDateBoundaryTimestamp(endDate, true);
 		filteredApps = applications.filter((app) => {
-			const ts =
-				app.dateAppliedTs ||
-				(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+			const ts = getApplicationAppliedTimestamp(app);
 			return ts >= sTs && ts <= eTs;
 		});
 	}
@@ -143,8 +213,8 @@ const generateStats = (
 		filteredApps = filteredApps.filter((app) => app.status === status);
 	}
 
-	const start = startDate ? new Date(startDate + "T00:00:00") : new Date();
-	const end = endDate ? new Date(endDate + "T23:59:59") : new Date();
+	const start = startDate ? new Date(`${startDate}T00:00:00`) : new Date();
+	const end = endDate ? new Date(`${endDate}T23:59:59`) : new Date();
 
 	// Daily stats - each day in the range
 	const dailyStats = [];
@@ -168,9 +238,7 @@ const generateStats = (
 				59,
 			).getTime();
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= dayStart && ts <= dayEnd;
 			}).length;
 			dailyStats.push({
@@ -202,9 +270,7 @@ const generateStats = (
 				59,
 			).getTime();
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= dayStart && ts <= dayEnd;
 			}).length;
 			dailyStats.push({
@@ -223,9 +289,7 @@ const generateStats = (
 			const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
 			}).length;
 
@@ -246,9 +310,7 @@ const generateStats = (
 			const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
 			}).length;
 
@@ -267,9 +329,7 @@ const generateStats = (
 			const yearEnd = new Date(year, 11, 31);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
 			}).length;
 
@@ -287,9 +347,7 @@ const generateStats = (
 			const yearEnd = new Date(year, 11, 31);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationAppliedTimestamp(app);
 				return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
 			}).length;
 
@@ -320,10 +378,17 @@ export default function App() {
 	const [activeTab, setActiveTab] = useState("dashboard");
 	const [viewSourceTab, setViewSourceTab] = useState(null);
 	// Render pie labels outside the pie to avoid overlap
-	const renderPieLabel = (props: any) => {
-		const { cx, cy, midAngle, outerRadius, percent, index } = props;
+	const renderPieLabel = (props: PieLabelProps) => {
+		const {
+			cx = 0,
+			cy = 0,
+			midAngle = 0,
+			outerRadius = 0,
+			percent = 0,
+			index = 0,
+		} = props;
 		const rad = Math.PI / 180;
-		const pct = Math.round((percent || 0) * 100);
+		const pct = Math.round(percent * 100);
 		if (pct === 0) return null;
 
 		// Increase radius for very small slices so labels don't overlap the pie
@@ -357,13 +422,13 @@ export default function App() {
 
 	// Custom label renderer for bars: place value inside when tall enough,
 	// otherwise render above the bar so it remains readable.
-	const renderBarLabel = (props: any) => {
-		const { x, y, width, height, value } = props;
+	const renderBarLabel = (props: BarLabelProps) => {
+		const { x = 0, y = 0, width = 0, height = 0, value = "" } = props;
 		const cx = x + width / 2;
 		const fontSize = 14;
 
 		// If bar height is small, place label above the bar
-		if ((height || 0) < 18) {
+		if (height < 18) {
 			return (
 				<text
 					x={cx}
@@ -696,7 +761,7 @@ export default function App() {
 				const companiesMap = new Map();
 				let nextCompanyId = 1;
 				const apps = rows.map((r) => {
-					const companyName = r.company || "Unknown";
+					const companyName = normalizeCompanyName(r.company);
 					if (!companiesMap.has(companyName)) {
 						companiesMap.set(companyName, nextCompanyId++);
 					}
@@ -711,7 +776,7 @@ export default function App() {
 					// Normalize applied_date to YYYY-MM-DD so daily stats match
 					const dateApplied = normalizeDateToInput(r.applied_date);
 					const interviewDate = r.interview_date ? normalizeDateToInput(r.interview_date) : "";
-					const dateAppliedTs = dateApplied ? new Date(dateApplied + "T00:00:00").getTime() : 0;
+					const dateAppliedTs = toDateBoundaryTimestamp(dateApplied);
 					return {
 						id: r.id,
 						companyId,
@@ -789,7 +854,7 @@ export default function App() {
 		if (activeTab === "applications" && focusSearchRequest) {
 			setTimeout(() => {
 				try {
-					searchInputRef.current && searchInputRef.current.focus();
+					searchInputRef.current?.focus();
 				} catch (e) {}
 			}, 50);
 			setFocusSearchRequest(false);
@@ -825,7 +890,7 @@ export default function App() {
 	useEffect(() => {
 		if (newApplication.companyId === "new") {
 			// focus after input mounts
-			setTimeout(() => newCompanyRef.current && newCompanyRef.current.focus(), 0);
+			setTimeout(() => newCompanyRef.current?.focus(), 0);
 		}
 	}, [newApplication.companyId]);
 	const [editingId, setEditingId] = useState(null);
@@ -856,7 +921,9 @@ export default function App() {
 	// Map of companyId -> companyName for fast lookup (avoid repeated .find calls)
 	const companyMap = useMemo(() => {
 		const m = new Map<number, string>();
-		companies.forEach((c) => m.set(c.id, c.name));
+		for (const company of companies) {
+			m.set(company.id, company.name);
+		}
 		return m;
 	}, [companies]);
 
@@ -896,8 +963,8 @@ export default function App() {
 		return [...applications]
 			.filter((a) => a.dateApplied)
 			.sort((a, b) => {
-				const da = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-				const db = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+				const da = getApplicationAppliedTimestamp(a);
+				const db = getApplicationAppliedTimestamp(b);
 				return db - da;
 			})
 			.slice(0, 10);
@@ -916,11 +983,9 @@ export default function App() {
 				// page shows only rows within the selected range when navigated from Dashboard.
 				const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
 				if (!hasValidRange) return true;
-				const s = new Date(filterStartDate + "T00:00:00").getTime();
-				const e = new Date(filterEndDate + "T23:59:59").getTime();
-				const d =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const s = toDateBoundaryTimestamp(filterStartDate);
+				const e = toDateBoundaryTimestamp(filterEndDate, true);
+				const d = getApplicationAppliedTimestamp(app);
 				return d >= s && d <= e;
 			}),
 		[
@@ -940,7 +1005,9 @@ export default function App() {
 	);
 	const filteredCompaniesCount = useMemo(() => {
 		const s = new Set<number>();
-		filteredApplications.forEach((a) => s.add(a.companyId));
+		for (const application of filteredApplications) {
+			s.add(application.companyId);
+		}
 		return s.size;
 	}, [filteredApplications]);
 
@@ -960,14 +1027,12 @@ export default function App() {
 		// If there's no date range, return base (which may have status applied)
 		if (!hasValidRange) return base;
 
-		const s = new Date(filterStartDate + "T00:00:00").getTime();
-		const e = new Date(filterEndDate + "T23:59:59").getTime();
+		const s = toDateBoundaryTimestamp(filterStartDate);
+		const e = toDateBoundaryTimestamp(filterEndDate, true);
 
 		// Apply date filter on top of base using timestamps
 		base = base.filter((app) => {
-			const d =
-				app.dateAppliedTs ||
-				(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+			const d = getApplicationAppliedTimestamp(app);
 			return d >= s && d <= e;
 		});
 
@@ -976,7 +1041,9 @@ export default function App() {
 
 	const totalCompanies = useMemo(() => {
 		const set = new Set<number>();
-		filteredForCounts.forEach((a) => set.add(a.companyId));
+		for (const application of filteredForCounts) {
+			set.add(application.companyId);
+		}
 		return set.size;
 	}, [filteredForCounts]);
 
@@ -999,44 +1066,47 @@ export default function App() {
 				acc[companyId].applications.push(app);
 				return acc;
 			},
-			{} as Record<number, any>,
+			{} as Record<number, ApplicationGroup>,
 		);
 
 		// Sort applications within each group by applied date (descending)
-		Object.values(groups).forEach((g: any) => {
-			g.applications.sort((a: any, b: any) => {
-				const ta = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-				const tb = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+		for (const group of Object.values(groups)) {
+			group.applications.sort((a, b) => {
+				const ta = getApplicationAppliedTimestamp(a);
+				const tb = getApplicationAppliedTimestamp(b);
 				return tb - ta;
 			});
-		});
+		}
 
 		return groups;
-	}, [filteredApplications, companies, companyMap]);
+	}, [filteredApplications, companyMap]);
 
 	// Sort grouped applications - memoized
 	const sortedGroupedApplications = useMemo(() => {
 		// Sort groups (companies)
-		const groups = Object.values(groupedApplications).sort((a: any, b: any) => {
+		const groups = Object.values(groupedApplications).sort((a, b) => {
 			if (sortConfig.key === "companyId") {
+				const companyA = normalizeCompanyName(a.companyName);
+				const companyB = normalizeCompanyName(b.companyName);
 				return sortConfig.direction === "asc"
-					? a.companyName.localeCompare(b.companyName)
-					: b.companyName.localeCompare(a.companyName);
+					? companyA.localeCompare(companyB, undefined, { numeric: true, sensitivity: "base" })
+					: companyB.localeCompare(companyA, undefined, { numeric: true, sensitivity: "base" });
 			}
 			return 0;
 		});
 
 		// Sort applications within each group if sorting by role, dateApplied, or status
 		if (["role", "dateApplied", "status"].includes(sortConfig.key)) {
-			groups.forEach((g: any) => {
-				g.applications = [...g.applications].sort((a: any, b: any) => {
-					let aValue = a[sortConfig.key] || "";
-					let bValue = b[sortConfig.key] || "";
+			const sortKey = sortConfig.key as keyof ApplicationRecord;
+			for (const group of groups) {
+				group.applications = [...group.applications].sort((a, b) => {
+					let aValue = a[sortKey] || "";
+					let bValue = b[sortKey] || "";
 					// For dateApplied, compare as dates
 					if (sortConfig.key === "dateApplied") {
-						aValue = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-						bValue = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
-						return sortConfig.direction === "asc" ? aValue - bValue : bValue - aValue;
+						const aDate = getApplicationAppliedTimestamp(a);
+						const bDate = getApplicationAppliedTimestamp(b);
+						return sortConfig.direction === "asc" ? aDate - bDate : bDate - aDate;
 					}
 					// For role and status, compare as strings
 					if (typeof aValue === "string" && typeof bValue === "string") {
@@ -1046,7 +1116,7 @@ export default function App() {
 					}
 					return 0;
 				});
-			});
+			}
 		}
 		return groups;
 	}, [groupedApplications, sortConfig]);
@@ -1083,10 +1153,10 @@ export default function App() {
 
 	// Expand all companies
 	const expandAllCompanies = useCallback(() => {
-		const expanded = {};
-		sortedGroupedApplications.forEach((group: any) => {
+		const expanded: Record<number, boolean> = {};
+		for (const group of sortedGroupedApplications) {
 			expanded[group.companyId] = true;
-		});
+		}
 		setExpandedCompanies(expanded);
 	}, [sortedGroupedApplications]);
 
@@ -1133,7 +1203,7 @@ export default function App() {
 		const files = Array.from(filesLike || []) as File[];
 		if (files.length === 0) return;
 
-		const allowed: any[] = [];
+		const allowed: ApplicationFile[] = [];
 		const rejected: string[] = [];
 
 		for (const file of files) {
@@ -1199,11 +1269,11 @@ export default function App() {
 
 		// Contacts are optional. Skip fully empty rows and allow any subset of fields.
 		const rawContacts = Array.isArray(newApplication.contacts) ? newApplication.contacts : [];
-		const validContacts = [];
+		const validContacts: Array<{ name: string; email: string | null; phone: string | null }> = [];
 		for (const c of rawContacts) {
-			const name = c && c.name ? String(c.name).trim() : "";
-			const email = c && c.email ? String(c.email).trim() : "";
-			let phone = c && c.phone ? String(c.phone).trim() : "";
+			const name = c?.name ? String(c.name).trim() : "";
+			const email = c?.email ? String(c.email).trim() : "";
+			let phone = c?.phone ? String(c.phone).trim() : "";
 
 			if (phone) {
 				if (!/^[\d+\s()\-]{1,25}$/.test(phone)) {
@@ -1230,8 +1300,7 @@ export default function App() {
 
 		// If new company is being added (either user selected 'Add new' or typed an unknown name)
 		if (resolvedCompanyId === "new") {
-			const newCompanyName =
-				(newApplication.newCompany && newApplication.newCompany.trim()) || companyQuery.trim();
+			const newCompanyName = newApplication.newCompany?.trim() || companyQuery.trim();
 			const newCompany = {
 				id: companies.length + 1,
 				name: newCompanyName,
@@ -1375,9 +1444,8 @@ export default function App() {
 					return savedMeta;
 				}
 			} catch (e) {
-				// Do not fall back to cross-origin browser PUT when server-side upload fails —
-				// that will trigger CORS errors. Instead, surface the server error.
-				throw e;
+				const errorMessage = e instanceof Error ? e.message : "server-side upload failed";
+				throw new Error(errorMessage);
 			}
 
 			// 2) PUT the file bytes directly to the signed URL (browser)
@@ -1431,19 +1499,15 @@ export default function App() {
 				const updated = await resp.json();
 				// After updating job, upload any new files and attach them
 				const filesToUpload = Array.isArray(newApplication.files)
-					? newApplication.files.filter((f) => f && f.file)
+					? newApplication.files.filter((f) => f?.file)
 					: [];
 				let attachments = [];
 				if (filesToUpload.length) {
 					try {
 						attachments = await Promise.all(
 							filesToUpload.map(async (f) => {
-								try {
-									const res = await uploadFileToServer(updated.id, f);
-									return res;
-								} catch (uerr) {
-									throw uerr;
-								}
+								const res = await uploadFileToServer(updated.id, f);
+								return res;
 							}),
 						);
 					} catch (e) {
@@ -1452,7 +1516,7 @@ export default function App() {
 						// Continue — do not abort the whole submit; user can retry attachments
 					}
 
-					if (attachments && attachments.length) {
+					if (attachments.length) {
 						const attachMeta = attachments.map((a) => ({
 							name: a.filename || a.name,
 							url: a.url || a.url,
@@ -1491,7 +1555,7 @@ export default function App() {
 										? normalizeDateToInput(updated.interview_date)
 										: "",
 									dateAppliedTs: updated.applied_date
-										? new Date(normalizeDateToInput(updated.applied_date) + "T00:00:00").getTime()
+										? toDateBoundaryTimestamp(normalizeDateToInput(updated.applied_date))
 										: app.dateAppliedTs || 0,
 									status: updated.status,
 									notes: updated.metadata?.notes || "",
@@ -1516,7 +1580,7 @@ export default function App() {
 				if (!resp.ok) throw new Error("Failed to create");
 				const created = await resp.json();
 				// Upload files (if any) and attach to created job
-				const filesToUpload = newApplication.files.filter((f) => f && f.file);
+				const filesToUpload = newApplication.files.filter((f) => f?.file);
 				let attachments = [];
 				if (filesToUpload.length) {
 					attachments = await Promise.all(
@@ -1539,7 +1603,7 @@ export default function App() {
 					dateApplied: normalizeDateToInput(created.applied_date),
 					interviewDate: created.interview_date ? normalizeDateToInput(created.interview_date) : "",
 					dateAppliedTs: created.applied_date
-						? new Date(normalizeDateToInput(created.applied_date) + "T00:00:00").getTime()
+						? toDateBoundaryTimestamp(normalizeDateToInput(created.applied_date))
 						: 0,
 					status: created.status,
 					notes: created.metadata?.notes || "",
@@ -1585,7 +1649,7 @@ export default function App() {
 			setIsSaving(false);
 			// If we detected a file-too-large error earlier, show a clear message
 			try {
-				if (err && err.message && String(err.message).includes("FILE_TOO_LARGE")) {
+				if (err?.message && String(err.message).includes("FILE_TOO_LARGE")) {
 					toast.error(
 						"One or more attachments are too large (max 5MB). Please attach smaller files.",
 					);
@@ -1888,7 +1952,10 @@ export default function App() {
 			const wb = XLSX.read(buf, { type: "array" });
 			const sheetName = wb.SheetNames[0];
 			const sheet = wb.Sheets[sheetName];
-			const rows: Array<any> = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+			const rows: Array<Record<string, unknown>> = XLSX.utils.sheet_to_json(sheet, {
+				defval: "",
+				raw: false,
+			});
 
 			if (!rows.length) {
 				toast.error("No data found in the sheet");
@@ -1899,7 +1966,9 @@ export default function App() {
 			// Normalize headers (case-insensitive)
 			const firstRow = rows[0];
 			const headerMap: Record<string, string> = {};
-			Object.keys(firstRow).forEach((h) => (headerMap[h.trim().toLowerCase()] = h));
+			for (const header of Object.keys(firstRow)) {
+				headerMap[header.trim().toLowerCase()] = header;
+			}
 
 			const reqCols = ["company name", "role", "date applied", "status"];
 			const missing = reqCols.filter((c) => !Object.prototype.hasOwnProperty.call(headerMap, c));
@@ -1914,9 +1983,9 @@ export default function App() {
 
 			for (const r of rows) {
 				const companyName = (r[headerMap["company name"]] || "").toString().trim();
-				const role = (r[headerMap["role"]] || "").toString().trim();
+				const role = (r[headerMap.role] || "").toString().trim();
 				const dateVal = r[headerMap["date applied"]];
-				const statusVal = (r[headerMap["status"]] || "").toString().trim();
+				const statusVal = (r[headerMap.status] || "").toString().trim();
 
 				if (!companyName || !role) {
 					failedCount++;
@@ -1965,7 +2034,7 @@ export default function App() {
 							role: created.title,
 							dateApplied: normalizeDateToInput(created.applied_date),
 							dateAppliedTs: created.applied_date
-								? new Date(normalizeDateToInput(created.applied_date) + "T00:00:00").getTime()
+								? toDateBoundaryTimestamp(normalizeDateToInput(created.applied_date))
 								: 0,
 							status: created.status,
 							notes: created.metadata?.notes || "",
@@ -1992,7 +2061,7 @@ export default function App() {
 	const removeFile = (file: { id?: number; name: string; url?: string }) => {
 		// If file has an id, it's already uploaded - mark for deletion on save
 		if (file.id) {
-			setFilesToDelete((prev) => [...prev, { id: file.id!, name: file.name }]);
+			setFilesToDelete((prev) => [...prev, { id: file.id, name: file.name }]);
 		}
 
 		// Remove from local state (visual removal)
@@ -2643,7 +2712,7 @@ export default function App() {
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							transition={{ duration: 0.2 }}
-							className="space-y-6"
+							className="w-full space-y-6"
 						>
 							<InterviewQuestions />
 						</motion.div>

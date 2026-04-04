@@ -60,6 +60,21 @@
           manualChunks(id) {
             if (!id) return;
               if (id.includes('node_modules')) {
+                const pdfPackages = [
+                  'jspdf',
+                  'fflate',
+                  'fast-png',
+                  'iobuffer',
+                  'canvg',
+                  'html2canvas',
+                  'dompurify',
+                  'rgbcolor',
+                  'stackblur-canvas',
+                  'css-line-break',
+                ];
+                if (pdfPackages.some((pkg) => id.includes(`/node_modules/${pkg}/`) || id.includes(`\\node_modules\\${pkg}\\`))) {
+                  return 'vendor_pdf';
+                }
                 if (id.includes('recharts')) return 'vendor_recharts';
                 if (id.includes('lucide-react')) return 'vendor_icons';
                 if (id.includes('@radix-ui')) return 'vendor_radix';
