@@ -34,17 +34,117 @@ import {
 	ChevronRight,
 	Eye,
 } from "lucide-react";
-import { Button } from "./components/ui/button";
 import * as XLSX from "xlsx";
 import { InterviewTimeline } from "./components/InterviewTimeline";
 import { InterviewQuestions } from "./components/InterviewQuestions";
+
+type Company = {
+	id: number;
+	name: string;
+};
+
+type ApplicationFile = {
+	id?: number;
+	name: string;
+	url?: string | null;
+	path?: string;
+	size?: number;
+	contentType?: string;
+	type?: string;
+	file?: File;
+	filename?: string;
+	storageKey?: string;
+	[key: string]: unknown;
+};
+
+type ApplicationContact = {
+	name?: string | null;
+	email?: string | null;
+	phone?: string | null;
+	[key: string]: unknown;
+};
+
+type ApplicationMetadata = {
+	notes?: string | null;
+	files?: ApplicationFile[];
+	contacts?: ApplicationContact[];
+	[key: string]: unknown;
+};
+
+type ApplicationRecord = {
+	id: number;
+	companyId: number;
+	role: string;
+	dateApplied: string;
+	interviewDate?: string;
+	dateAppliedTs?: number;
+	status: string;
+	notes?: string;
+	files: ApplicationFile[];
+	contacts: ApplicationContact[];
+	statusNotes?: string;
+	metadata?: ApplicationMetadata;
+	interview_date?: string;
+	applied_date?: string;
+	company_id?: number;
+	title?: string;
+	[key: string]: unknown;
+};
+
+type ApplicationFormState = {
+	companyId: string;
+	newCompany: string;
+	role: string;
+	dateApplied: string;
+	interviewDate: string;
+	status: string;
+	notes: string;
+	files: ApplicationFile[];
+	contacts: ApplicationContact[];
+	statusNotes?: string;
+};
+
+type ApplicationGroup = {
+	companyId: number;
+	companyName: string;
+	applications: ApplicationRecord[];
+};
+
+type PieLabelProps = {
+	cx?: number;
+	cy?: number;
+	midAngle?: number;
+	outerRadius?: number;
+	percent?: number;
+	index?: number;
+};
+
+type BarLabelProps = {
+	x?: number;
+	y?: number;
+	width?: number;
+	height?: number;
+	value?: number | string;
+};
+
+type SortKey = "companyId" | "role" | "dateApplied" | "status";
+type SortDirection = "asc" | "desc";
+
+type SortConfig = {
+	key: SortKey;
+	direction: SortDirection;
+};
+
+type SpreadsheetRow = Record<string, unknown>;
 
 // Helper to format dates in DD-MMM-YYYY, e.g., 05-May-2024
 // Accepts `YYYY-MM-DD`, full ISO strings, or `Date` objects. When given full
 // ISO datetimes from the server, interpret the date portion using UTC to avoid
 // timezone-based day shifts.
 const formatDisplayDate = (input: string | Date) => {
-	let y: number, mIndex: number, d: number;
+	let y: number;
+	let mIndex: number;
+	let d: number;
 
 	if (input instanceof Date) {
 		y = input.getFullYear();
@@ -57,7 +157,7 @@ const formatDisplayDate = (input: string | Date) => {
 		d = parts[2];
 	} else {
 		const dt = new Date(input);
-		if (!isNaN(dt.getTime())) {
+		if (!Number.isNaN(dt.getTime())) {
 			// Use UTC parts for ISO datetimes to avoid local timezone shifting the day
 			y = dt.getUTCFullYear();
 			mIndex = dt.getUTCMonth();
@@ -79,8 +179,24 @@ const formatDisplayDate = (input: string | Date) => {
 // (removed unused month-year badge helper)
 
 // Initial empty arrays for company and application data
-const initialCompanies: Array<{ id: number; name: string }> = [];
-const initialApplications: Array<any> = [];
+const initialCompanies: Company[] = [];
+const initialApplications: ApplicationRecord[] = [];
+
+const toStartOfDayTimestamp = (date: string) => new Date(`${date}T00:00:00`).getTime();
+const toEndOfDayTimestamp = (date: string) => new Date(`${date}T23:59:59`).getTime();
+const getApplicationTimestamp = (app: Partial<ApplicationRecord>) =>
+	app.dateAppliedTs || (app.dateApplied ? toStartOfDayTimestamp(app.dateApplied) : 0);
+const createEmptyApplicationForm = (): ApplicationFormState => ({
+	companyId: "",
+	newCompany: "",
+	role: "",
+	dateApplied: getTodayISO(),
+	interviewDate: "",
+	status: "Applied",
+	notes: "",
+	files: [],
+	contacts: [],
+});
 
 // Maximum allowed file size for each upload (5 MB)
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -119,21 +235,19 @@ const COLORS = [
 
 // Function to generate statistics based on date range, timeframe and optional status
 const generateStats = (
-	applications,
+	applications: ApplicationRecord[],
 	startDate?: string,
 	endDate?: string,
-	timeframe: string = "daily",
+	_timeframe = "daily",
 	status?: string,
 ) => {
 	// Filter applications by date range if provided (use numeric timestamps for speed)
 	let filteredApps = [...applications];
 	if (startDate && endDate) {
-		const sTs = new Date(startDate + "T00:00:00").getTime();
-		const eTs = new Date(endDate + "T23:59:59").getTime();
+		const sTs = toStartOfDayTimestamp(startDate);
+		const eTs = toEndOfDayTimestamp(endDate);
 		filteredApps = applications.filter((app) => {
-			const ts =
-				app.dateAppliedTs ||
-				(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+			const ts = getApplicationTimestamp(app);
 			return ts >= sTs && ts <= eTs;
 		});
 	}
@@ -143,8 +257,8 @@ const generateStats = (
 		filteredApps = filteredApps.filter((app) => app.status === status);
 	}
 
-	const start = startDate ? new Date(startDate + "T00:00:00") : new Date();
-	const end = endDate ? new Date(endDate + "T23:59:59") : new Date();
+	const start = startDate ? new Date(`${startDate}T00:00:00`) : new Date();
+	const end = endDate ? new Date(`${endDate}T23:59:59`) : new Date();
 
 	// Daily stats - each day in the range
 	const dailyStats = [];
@@ -168,9 +282,7 @@ const generateStats = (
 				59,
 			).getTime();
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= dayStart && ts <= dayEnd;
 			}).length;
 			dailyStats.push({
@@ -202,9 +314,7 @@ const generateStats = (
 				59,
 			).getTime();
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= dayStart && ts <= dayEnd;
 			}).length;
 			dailyStats.push({
@@ -223,9 +333,7 @@ const generateStats = (
 			const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
 			}).length;
 
@@ -246,9 +354,7 @@ const generateStats = (
 			const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= monthStart.getTime() && ts <= monthEnd.getTime();
 			}).length;
 
@@ -267,9 +373,7 @@ const generateStats = (
 			const yearEnd = new Date(year, 11, 31);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
 			}).length;
 
@@ -287,9 +391,7 @@ const generateStats = (
 			const yearEnd = new Date(year, 11, 31);
 
 			const count = filteredApps.filter((app) => {
-				const ts =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const ts = getApplicationTimestamp(app);
 				return ts >= yearStart.getTime() && ts <= yearEnd.getTime();
 			}).length;
 
@@ -318,9 +420,10 @@ const generateStats = (
 export default function App() {
 	// State
 	const [activeTab, setActiveTab] = useState("dashboard");
-	const [viewSourceTab, setViewSourceTab] = useState(null);
+	const [viewSourceTab, setViewSourceTab] = useState<string | null>(null);
+	const [returnToViewAfterEdit, setReturnToViewAfterEdit] = useState(false);
 	// Render pie labels outside the pie to avoid overlap
-	const renderPieLabel = (props: any) => {
+	const renderPieLabel = (props: PieLabelProps) => {
 		const { cx, cy, midAngle, outerRadius, percent, index } = props;
 		const rad = Math.PI / 180;
 		const pct = Math.round((percent || 0) * 100);
@@ -357,7 +460,7 @@ export default function App() {
 
 	// Custom label renderer for bars: place value inside when tall enough,
 	// otherwise render above the bar so it remains readable.
-	const renderBarLabel = (props: any) => {
+	const renderBarLabel = (props: BarLabelProps) => {
 		const { x, y, width, height, value } = props;
 		const cx = x + width / 2;
 		const fontSize = 14;
@@ -485,9 +588,6 @@ export default function App() {
 		return years;
 	}, []);
 
-	// Ascending order for start year
-	const yearOptionsAsc = useMemo(() => [...yearOptionsDesc].reverse(), [yearOptionsDesc]);
-
 	// Generate month-year options (last 24 months)
 	const monthYearOptions = useMemo(() => {
 		const options: { value: string; label: string }[] = [];
@@ -500,9 +600,6 @@ export default function App() {
 		}
 		return options;
 	}, []);
-
-	// Ascending order for start month
-	const monthYearOptionsAsc = useMemo(() => [...monthYearOptions].reverse(), [monthYearOptions]);
 
 	// Handle month-year change for monthly timeframe
 	const handleMonthYearChange = (type: "start" | "end", value: string) => {
@@ -565,7 +662,7 @@ export default function App() {
 				? `${window.location.pathname}?${newQuery}`
 				: window.location.pathname;
 			window.history.pushState({}, "", newUrl);
-		} catch (e) {
+		} catch (_e) {
 			// ignore in non-browser environments
 		}
 	}, []);
@@ -584,7 +681,7 @@ export default function App() {
 				? `${window.location.pathname}?${newQuery}`
 				: window.location.pathname;
 			window.history.pushState({}, "", newUrl);
-		} catch (e) {
+		} catch (_e) {
 			// ignore
 		}
 	}, []);
@@ -605,7 +702,7 @@ export default function App() {
 			window.history.pushState({}, "", newUrl);
 			if (selectedStatus) params.set("status", selectedStatus);
 			else params.delete("status");
-		} catch (e) {
+		} catch (_e) {
 			// ignore
 		}
 		// ensure Applications page shows collapsed rows and resets pagination
@@ -639,7 +736,7 @@ export default function App() {
 				? `${window.location.pathname}?${newQuery}`
 				: window.location.pathname;
 			window.history.pushState({}, "", newUrl);
-		} catch (e) {
+		} catch (_e) {
 			// ignore in non-browser environments
 		}
 
@@ -711,7 +808,7 @@ export default function App() {
 					// Normalize applied_date to YYYY-MM-DD so daily stats match
 					const dateApplied = normalizeDateToInput(r.applied_date);
 					const interviewDate = r.interview_date ? normalizeDateToInput(r.interview_date) : "";
-					const dateAppliedTs = dateApplied ? new Date(dateApplied + "T00:00:00").getTime() : 0;
+					const dateAppliedTs = dateApplied ? toStartOfDayTimestamp(dateApplied) : 0;
 					return {
 						id: r.id,
 						companyId,
@@ -734,7 +831,7 @@ export default function App() {
 					setCompanies(companiesArr);
 					setApplications(apps);
 				}
-			} catch (err) {
+			} catch (_err) {
 				// ignore load errors
 			}
 		}
@@ -759,7 +856,7 @@ export default function App() {
 				if (timeframe) setSelectedTimeframe(timeframe);
 				setActiveTab("applications");
 			}
-		} catch (e) {
+		} catch (_e) {
 			// ignore
 		}
 	}, []);
@@ -772,7 +869,7 @@ export default function App() {
 		if (activeTab === "applications") {
 			try {
 				window.scrollTo({ top: 0, behavior: "smooth" });
-			} catch (e) {
+			} catch (_e) {
 				// ignore in non-browser environments
 			}
 		}
@@ -789,8 +886,8 @@ export default function App() {
 		if (activeTab === "applications" && focusSearchRequest) {
 			setTimeout(() => {
 				try {
-					searchInputRef.current && searchInputRef.current.focus();
-				} catch (e) {}
+					searchInputRef.current?.focus();
+				} catch (_e) {}
 			}, 50);
 			setFocusSearchRequest(false);
 		}
@@ -799,21 +896,14 @@ export default function App() {
 	const [isAddingNew, setIsAddingNew] = useState(false);
 	const [companyQuery, setCompanyQuery] = useState("");
 	const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
-	const [newApplication, setNewApplication] = useState({
-		companyId: "",
-		newCompany: "",
-		role: "",
-		dateApplied: getTodayISO(),
-		interviewDate: "",
-		status: "Applied",
-		notes: "",
-		files: [],
-		contacts: [],
-	});
+	const [newApplication, setNewApplication] = useState<ApplicationFormState>(createEmptyApplicationForm());
 	// Local UI state to show native date picker when user focuses the date field
 	const [showNativeDateApplied, setShowNativeDateApplied] = useState(false);
 	const [showNativeInterviewDate, setShowNativeInterviewDate] = useState(false);
-	const [sortConfig, setSortConfig] = useState({ key: "companyId", direction: "asc" });
+	const [sortConfig, setSortConfig] = useState<SortConfig>({
+		key: "companyId",
+		direction: "asc",
+	});
 	const [searchTerm, setSearchTerm] = useState("");
 	const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
 
@@ -825,17 +915,17 @@ export default function App() {
 	useEffect(() => {
 		if (newApplication.companyId === "new") {
 			// focus after input mounts
-			setTimeout(() => newCompanyRef.current && newCompanyRef.current.focus(), 0);
+			setTimeout(() => newCompanyRef.current?.focus(), 0);
 		}
 	}, [newApplication.companyId]);
-	const [editingId, setEditingId] = useState(null);
-	const [viewingId, setViewingId] = useState(null);
+	const [editingId, setEditingId] = useState<number | null>(null);
+	const [viewingId, setViewingId] = useState<number | null>(null);
 	// Scroll to top when viewing a single application page
 	useEffect(() => {
 		if (activeTab === "view" && viewingId) {
 			try {
 				window.scrollTo({ top: 0, behavior: "smooth" });
-			} catch (e) {
+			} catch (_e) {
 				// ignore in non-browser environments
 			}
 		}
@@ -846,7 +936,7 @@ export default function App() {
 	const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
 	const [isSaving, setIsSaving] = useState(false);
 	const formDisabled = (Boolean(viewingId) && viewingId !== editingId) || isSaving;
-	const fileInputRef = useRef(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const newCompanyRef = useRef<HTMLInputElement | null>(null);
 	const [dragFiles, setDragFiles] = useState(false);
 	const dragFilesCounter = useRef(0);
@@ -856,7 +946,9 @@ export default function App() {
 	// Map of companyId -> companyName for fast lookup (avoid repeated .find calls)
 	const companyMap = useMemo(() => {
 		const m = new Map<number, string>();
-		companies.forEach((c) => m.set(c.id, c.name));
+		for (const company of companies) {
+			m.set(company.id, company.name);
+		}
 		return m;
 	}, [companies]);
 
@@ -867,6 +959,16 @@ export default function App() {
 			direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
 		}));
 	}, []);
+
+	const handleSortableKeyDown = useCallback(
+		(event: React.KeyboardEvent<HTMLElement>, key: SortKey) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				handleSort(key);
+			}
+		},
+		[handleSort],
+	);
 
 	// Sort applications - memoized for performance
 	const sortedApplications = useMemo(
@@ -888,7 +990,7 @@ export default function App() {
 				}
 				return 0;
 			}),
-		[applications, sortConfig, companies],
+		[applications, companyMap, sortConfig],
 	);
 
 	// Recent applications - last 10 by dateApplied (descending)
@@ -896,8 +998,8 @@ export default function App() {
 		return [...applications]
 			.filter((a) => a.dateApplied)
 			.sort((a, b) => {
-				const da = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-				const db = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+				const da = getApplicationTimestamp(a);
+				const db = getApplicationTimestamp(b);
 				return db - da;
 			})
 			.slice(0, 10);
@@ -916,16 +1018,14 @@ export default function App() {
 				// page shows only rows within the selected range when navigated from Dashboard.
 				const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
 				if (!hasValidRange) return true;
-				const s = new Date(filterStartDate + "T00:00:00").getTime();
-				const e = new Date(filterEndDate + "T23:59:59").getTime();
-				const d =
-					app.dateAppliedTs ||
-					(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+				const s = toStartOfDayTimestamp(filterStartDate);
+				const e = toEndOfDayTimestamp(filterEndDate);
+				const d = getApplicationTimestamp(app);
 				return d >= s && d <= e;
 			}),
 		[
 			sortedApplications,
-			companies,
+			companyMap,
 			debouncedSearchTerm,
 			filterStartDate,
 			filterEndDate,
@@ -940,7 +1040,9 @@ export default function App() {
 	);
 	const filteredCompaniesCount = useMemo(() => {
 		const s = new Set<number>();
-		filteredApplications.forEach((a) => s.add(a.companyId));
+		for (const application of filteredApplications) {
+			s.add(application.companyId);
+		}
 		return s.size;
 	}, [filteredApplications]);
 
@@ -960,14 +1062,12 @@ export default function App() {
 		// If there's no date range, return base (which may have status applied)
 		if (!hasValidRange) return base;
 
-		const s = new Date(filterStartDate + "T00:00:00").getTime();
-		const e = new Date(filterEndDate + "T23:59:59").getTime();
+		const s = toStartOfDayTimestamp(filterStartDate);
+		const e = toEndOfDayTimestamp(filterEndDate);
 
 		// Apply date filter on top of base using timestamps
 		base = base.filter((app) => {
-			const d =
-				app.dateAppliedTs ||
-				(app.dateApplied ? new Date(app.dateApplied + "T00:00:00").getTime() : 0);
+			const d = getApplicationTimestamp(app);
 			return d >= s && d <= e;
 		});
 
@@ -976,7 +1076,9 @@ export default function App() {
 
 	const totalCompanies = useMemo(() => {
 		const set = new Set<number>();
-		filteredForCounts.forEach((a) => set.add(a.companyId));
+		for (const application of filteredForCounts) {
+			set.add(application.companyId);
+		}
 		return set.size;
 	}, [filteredForCounts]);
 
@@ -984,7 +1086,7 @@ export default function App() {
 	// Also sort each group's applications by `dateApplied` descending (newest first)
 	const groupedApplications = useMemo(() => {
 		const groups = filteredApplications.reduce(
-			(acc, app) => {
+			(acc: Record<number, ApplicationGroup>, app) => {
 				const companyId = app.companyId;
 				const companyName = companyMap.get(companyId) || "Unknown";
 
@@ -999,25 +1101,25 @@ export default function App() {
 				acc[companyId].applications.push(app);
 				return acc;
 			},
-			{} as Record<number, any>,
+			{} as Record<number, ApplicationGroup>,
 		);
 
 		// Sort applications within each group by applied date (descending)
-		Object.values(groups).forEach((g: any) => {
-			g.applications.sort((a: any, b: any) => {
-				const ta = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-				const tb = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+		for (const group of Object.values(groups)) {
+			group.applications.sort((a, b) => {
+				const ta = getApplicationTimestamp(a);
+				const tb = getApplicationTimestamp(b);
 				return tb - ta;
 			});
-		});
+		}
 
 		return groups;
-	}, [filteredApplications, companies, companyMap]);
+	}, [filteredApplications, companyMap]);
 
 	// Sort grouped applications - memoized
 	const sortedGroupedApplications = useMemo(() => {
 		// Sort groups (companies)
-		const groups = Object.values(groupedApplications).sort((a: any, b: any) => {
+		const groups = Object.values(groupedApplications).sort((a, b) => {
 			if (sortConfig.key === "companyId") {
 				return sortConfig.direction === "asc"
 					? a.companyName.localeCompare(b.companyName)
@@ -1028,14 +1130,14 @@ export default function App() {
 
 		// Sort applications within each group if sorting by role, dateApplied, or status
 		if (["role", "dateApplied", "status"].includes(sortConfig.key)) {
-			groups.forEach((g: any) => {
-				g.applications = [...g.applications].sort((a: any, b: any) => {
+			for (const group of groups) {
+				group.applications = [...group.applications].sort((a, b) => {
 					let aValue = a[sortConfig.key] || "";
 					let bValue = b[sortConfig.key] || "";
 					// For dateApplied, compare as dates
 					if (sortConfig.key === "dateApplied") {
-						aValue = a.dateAppliedTs || (a.dateApplied ? new Date(a.dateApplied).getTime() : 0);
-						bValue = b.dateAppliedTs || (b.dateApplied ? new Date(b.dateApplied).getTime() : 0);
+						aValue = getApplicationTimestamp(a);
+						bValue = getApplicationTimestamp(b);
 						return sortConfig.direction === "asc" ? aValue - bValue : bValue - aValue;
 					}
 					// For role and status, compare as strings
@@ -1046,7 +1148,7 @@ export default function App() {
 					}
 					return 0;
 				});
-			});
+			}
 		}
 		return groups;
 	}, [groupedApplications, sortConfig]);
@@ -1081,12 +1183,22 @@ export default function App() {
 		});
 	}, []);
 
+	const handleExpandableRowKeyDown = useCallback(
+		(event: React.KeyboardEvent<HTMLElement>, companyId: number) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				toggleCompanyExpand(companyId);
+			}
+		},
+		[toggleCompanyExpand],
+	);
+
 	// Expand all companies
 	const expandAllCompanies = useCallback(() => {
-		const expanded = {};
-		sortedGroupedApplications.forEach((group: any) => {
+		const expanded: Record<string, boolean> = {};
+		for (const group of sortedGroupedApplications) {
 			expanded[group.companyId] = true;
-		});
+		}
 		setExpandedCompanies(expanded);
 	}, [sortedGroupedApplications]);
 
@@ -1133,7 +1245,7 @@ export default function App() {
 		const files = Array.from(filesLike || []) as File[];
 		if (files.length === 0) return;
 
-		const allowed: any[] = [];
+		const allowed: ApplicationFile[] = [];
 		const rejected: string[] = [];
 
 		for (const file of files) {
@@ -1189,21 +1301,21 @@ export default function App() {
 			try {
 				const id = new Date(newApplication.interviewDate);
 				const ad = new Date(newApplication.dateApplied || "");
-				if (!isNaN(id.getTime()) && !isNaN(ad.getTime()) && id.getTime() < ad.getTime()) {
+				if (!Number.isNaN(id.getTime()) && !Number.isNaN(ad.getTime()) && id.getTime() < ad.getTime()) {
 					newErrors.interviewDate = "Interview date cannot be earlier than submission date";
 				}
-			} catch (e) {
+			} catch (_e) {
 				// ignore parse errors
 			}
 		}
 
 		// Contacts are optional. Skip fully empty rows and allow any subset of fields.
 		const rawContacts = Array.isArray(newApplication.contacts) ? newApplication.contacts : [];
-		const validContacts = [];
+		const validContacts: ApplicationContact[] = [];
 		for (const c of rawContacts) {
-			const name = c && c.name ? String(c.name).trim() : "";
-			const email = c && c.email ? String(c.email).trim() : "";
-			let phone = c && c.phone ? String(c.phone).trim() : "";
+			const name = c?.name ? String(c.name).trim() : "";
+			const email = c?.email ? String(c.email).trim() : "";
+			const phone = c?.phone ? String(c.phone).trim() : "";
 
 			if (phone) {
 				if (!/^[\d+\s()\-]{1,25}$/.test(phone)) {
@@ -1222,16 +1334,14 @@ export default function App() {
 		setIsSaving(true);
 
 		// Determine numeric companyId for persistence. If resolvedCompanyId === 'new' we'll create it below.
-		let companyId = Number.isFinite ? parseInt(resolvedCompanyId) : NaN;
-		if (isNaN(companyId) && resolvedCompanyId && resolvedCompanyId !== "new") {
-			// fallback parse
-			companyId = parseInt(resolvedCompanyId || "");
+		let companyId = Number.NaN;
+		if (resolvedCompanyId && resolvedCompanyId !== "new") {
+			companyId = Number.parseInt(resolvedCompanyId, 10);
 		}
 
 		// If new company is being added (either user selected 'Add new' or typed an unknown name)
 		if (resolvedCompanyId === "new") {
-			const newCompanyName =
-				(newApplication.newCompany && newApplication.newCompany.trim()) || companyQuery.trim();
+			const newCompanyName = newApplication.newCompany?.trim() || companyQuery.trim();
 			const newCompany = {
 				id: companies.length + 1,
 				name: newCompanyName,
@@ -1265,7 +1375,7 @@ export default function App() {
 			for (const file of filesToDelete) {
 				try {
 					await fetch(`/api/uploads/${file.id}`, { method: "DELETE" });
-				} catch (err) {
+				} catch (_err) {
 					// deletion failure logged to server/dev console if needed
 				}
 			}
@@ -1340,48 +1450,38 @@ export default function App() {
 			// by sending the bytes to `/api/uploads` with `uploadUrl` and let the server
 			// execute the PUT. This avoids CORS issues for providers that don't allow
 			// browser-side uploads.
-			let usedUploadUrl = uploadUrl;
-			let uploadedViaServer = false;
-			try {
-				const uploadOrigin = uploadUrl ? new URL(uploadUrl).origin : null;
-				if (uploadOrigin && uploadOrigin !== window.location.origin) {
-					// server-side upload
-					const buf = await fileObj.file.arrayBuffer();
-					const b64 = arrayBufferToBase64(buf);
-					const metaResp = await fetch("/api/uploads", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							jobId,
-							filename: fileObj.name,
-							contentBase64: b64,
-							contentType: fileObj.file.type,
-							uploadUrl,
-						}),
-					});
-					if (!metaResp.ok) {
-						if (metaResp.status === 413) {
-							toast.error(
-								"One or more files are too large (max 5MB). Please attach smaller files.",
-							);
-							throw new Error("FILE_TOO_LARGE");
-						}
-						const txt = await metaResp.text().catch(() => "<no body>");
-						// Surface server-side upload failure instead of falling back to a browser PUT
-						throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
+			const uploadOrigin = uploadUrl ? new URL(uploadUrl).origin : null;
+			if (uploadOrigin && uploadOrigin !== window.location.origin) {
+				// server-side upload
+				const buf = await fileObj.file.arrayBuffer();
+				const b64 = arrayBufferToBase64(buf);
+				const metaResp = await fetch("/api/uploads", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						jobId,
+						filename: fileObj.name,
+						contentBase64: b64,
+						contentType: fileObj.file.type,
+						uploadUrl,
+					}),
+				});
+				if (!metaResp.ok) {
+					if (metaResp.status === 413) {
+						toast.error(
+							"One or more files are too large (max 5MB). Please attach smaller files.",
+						);
+						throw new Error("FILE_TOO_LARGE");
 					}
-					const savedMeta = await metaResp.json();
-					uploadedViaServer = true;
-					return savedMeta;
+					const txt = await metaResp.text().catch(() => "<no body>");
+					// Surface server-side upload failure instead of falling back to a browser PUT.
+					throw new Error(`server-side upload failed: ${metaResp.status} ${txt}`);
 				}
-			} catch (e) {
-				// Do not fall back to cross-origin browser PUT when server-side upload fails —
-				// that will trigger CORS errors. Instead, surface the server error.
-				throw e;
+				return await metaResp.json();
 			}
 
 			// 2) PUT the file bytes directly to the signed URL (browser)
-			const putRes = await fetch(usedUploadUrl, {
+			const putRes = await fetch(uploadUrl, {
 				method: "PUT",
 				headers: { "Content-Type": fileObj.file.type },
 				body: fileObj.file,
@@ -1431,31 +1531,22 @@ export default function App() {
 				const updated = await resp.json();
 				// After updating job, upload any new files and attach them
 				const filesToUpload = Array.isArray(newApplication.files)
-					? newApplication.files.filter((f) => f && f.file)
+					? newApplication.files.filter((f) => f?.file)
 					: [];
 				let attachments = [];
 				if (filesToUpload.length) {
 					try {
-						attachments = await Promise.all(
-							filesToUpload.map(async (f) => {
-								try {
-									const res = await uploadFileToServer(updated.id, f);
-									return res;
-								} catch (uerr) {
-									throw uerr;
-								}
-							}),
-						);
-					} catch (e) {
+						attachments = await Promise.all(filesToUpload.map((f) => uploadFileToServer(updated.id, f)));
+					} catch (_e) {
 						// upload error handled silently; show user-facing toast
 						toast.error("One or more attachments failed to upload.");
-						// Continue — do not abort the whole submit; user can retry attachments
+						// Continue without blocking the rest of the save. The user can retry attachments.
 					}
 
-					if (attachments && attachments.length) {
+					if (attachments.length) {
 						const attachMeta = attachments.map((a) => ({
 							name: a.filename || a.name,
-							url: a.url || a.url,
+							url: a.url,
 							id: a.id,
 						}));
 						const existingFiles =
@@ -1465,47 +1556,67 @@ export default function App() {
 						const mergedFiles = [...existingFiles, ...attachMeta];
 						// patch job metadata to include merged attachments
 						try {
-							const metaResp = await fetch(`/api/jobs/${updated.id}`, {
+							await fetch(`/api/jobs/${updated.id}`, {
 								method: "PATCH",
 								headers: { "Content-Type": "application/json" },
 								body: JSON.stringify({
 									metadata: { ...(updated.metadata || {}), files: mergedFiles },
 								}),
 							});
-						} catch (pmErr) {
+						} catch (_pmErr) {
 							// ignore metadata patch errors
 						}
 						updated.metadata = { ...(updated.metadata || {}), files: mergedFiles };
 					}
 				}
 
+				const updatedApplication = {
+					id: updated.id,
+					companyId,
+					role: updated.title,
+					dateApplied: normalizeDateToInput(updated.applied_date),
+					interviewDate: updated.interview_date
+						? normalizeDateToInput(updated.interview_date)
+						: "",
+					dateAppliedTs: updated.applied_date
+						? toStartOfDayTimestamp(normalizeDateToInput(updated.applied_date))
+						: 0,
+					status: updated.status,
+					notes: updated.metadata?.notes || "",
+					files: updated.metadata?.files || [],
+					contacts: updated.contacts || updated.metadata?.contacts || [],
+					statusNotes: updated.status_notes || "",
+				};
+
 				setApplications(
-					applications.map((app) =>
-						app.id === editingId
-							? {
-									...app,
-									companyId,
-									role: updated.title,
-									dateApplied: normalizeDateToInput(updated.applied_date),
-									interviewDate: updated.interview_date
-										? normalizeDateToInput(updated.interview_date)
-										: "",
-									dateAppliedTs: updated.applied_date
-										? new Date(normalizeDateToInput(updated.applied_date) + "T00:00:00").getTime()
-										: app.dateAppliedTs || 0,
-									status: updated.status,
-									notes: updated.metadata?.notes || "",
-									files: updated.metadata?.files || [],
-									contacts: updated.contacts || updated.metadata?.contacts || [],
-									statusNotes: updated.status_notes || "",
-								}
-							: app,
-					),
+					applications.map((app) => (app.id === editingId ? { ...app, ...updatedApplication } : app)),
 				);
 				setEditingId(null);
-				// Show the correct page after modify (return to the tab that opened edit)
-				setActiveTab(viewSourceTab === "applications" ? "applications" : "dashboard");
-				setViewSourceTab(null);
+
+				if (returnToViewAfterEdit) {
+					setViewingId(updated.id);
+					setNewApplication({
+						companyId: companyId.toString(),
+						newCompany: "",
+						role: updatedApplication.role,
+						dateApplied: updatedApplication.dateApplied,
+						interviewDate: updatedApplication.interviewDate,
+						status: updatedApplication.status,
+						notes: updatedApplication.notes,
+						files: updatedApplication.files,
+						contacts: updatedApplication.contacts,
+						statusNotes: updatedApplication.statusNotes,
+					});
+					setCompanyQuery(getCompanyName(companyId));
+					setShowAddForm(false);
+					setIsAddingNew(false);
+					setActiveTab("view");
+				} else {
+					setViewingId(null);
+					setActiveTab(viewSourceTab || "applications");
+					setViewSourceTab(null);
+				}
+				setReturnToViewAfterEdit(false);
 			} else {
 				// Create new job on server
 				const resp = await fetch("/api/jobs", {
@@ -1516,7 +1627,7 @@ export default function App() {
 				if (!resp.ok) throw new Error("Failed to create");
 				const created = await resp.json();
 				// Upload files (if any) and attach to created job
-				const filesToUpload = newApplication.files.filter((f) => f && f.file);
+				const filesToUpload = newApplication.files.filter((f) => f?.file);
 				let attachments = [];
 				if (filesToUpload.length) {
 					attachments = await Promise.all(
@@ -1539,7 +1650,7 @@ export default function App() {
 					dateApplied: normalizeDateToInput(created.applied_date),
 					interviewDate: created.interview_date ? normalizeDateToInput(created.interview_date) : "",
 					dateAppliedTs: created.applied_date
-						? new Date(normalizeDateToInput(created.applied_date) + "T00:00:00").getTime()
+						? toStartOfDayTimestamp(normalizeDateToInput(created.applied_date))
 						: 0,
 					status: created.status,
 					notes: created.metadata?.notes || "",
@@ -1561,21 +1672,17 @@ export default function App() {
 				setEditingId(null);
 				setActiveTab(viewSourceTab || "applications");
 				setViewSourceTab(null);
+				setReturnToViewAfterEdit(false);
 			}
 
-			// Reset form
-			setNewApplication({
-				companyId: "",
-				newCompany: "",
-				role: "",
-				dateApplied: getTodayISO(),
-				status: "Applied",
-				notes: "",
-				files: [],
-				contacts: [],
-			});
+			// Reset form unless we are returning to the read-only view for the updated application.
+			if (!editingId || !returnToViewAfterEdit) {
+				setNewApplication(createEmptyApplicationForm());
+			}
 			setErrors({});
-			setCompanyQuery("");
+			if (!editingId || !returnToViewAfterEdit) {
+				setCompanyQuery("");
+			}
 			setCompanyDropdownOpen(false);
 			setFilesToDelete([]); // Clear files marked for deletion
 			setShowAddForm(false);
@@ -1585,82 +1692,44 @@ export default function App() {
 			setIsSaving(false);
 			// If we detected a file-too-large error earlier, show a clear message
 			try {
-				if (err && err.message && String(err.message).includes("FILE_TOO_LARGE")) {
+				if (err?.message && String(err.message).includes("FILE_TOO_LARGE")) {
 					toast.error(
 						"One or more attachments are too large (max 5MB). Please attach smaller files.",
 					);
 				} else {
 					toast.error("Failed to save application.");
 				}
-			} catch (e) {
+			} catch (_e) {
 				toast.error("Failed to save application. See console for details.");
 			}
 		}
 	};
 
 	// Handle edit application
-	const handleEdit = (id) => {
+	const handleEdit = (id: number) => {
 		const app = applications.find((a) => a.id === id);
 		if (!app) return;
-		const companyName = getCompanyName(app.companyId);
-
-		setNewApplication({
-			companyId: app.companyId.toString(),
-			newCompany: "",
-			role: app.role,
-			dateApplied: normalizeDateToInput(app.dateApplied),
-			interviewDate:
-				app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ""),
-			status: app.status,
-			notes: app.notes,
-			files: app.files,
-			contacts: Array.isArray(app.contacts)
-				? app.contacts
-				: app.metadata && Array.isArray(app.metadata.contacts)
-					? app.metadata.contacts
-					: [],
-			statusNotes: app.statusNotes || "",
-		});
-		// prefill combo input
-		setCompanyQuery(companyName);
+		loadApplicationIntoForm(app);
 		setFilesToDelete([]); // Clear any previous deletion marks
 		// Open full-page view and enter edit mode there instead of opening the modal
 		setViewingId(id);
 		setEditingId(id);
-		setViewSourceTab(activeTab);
-		setFilesToDelete([]);
+		setViewSourceTab(activeTab === "view" ? viewSourceTab : activeTab);
+		setReturnToViewAfterEdit(activeTab === "view");
 		setShowAddForm(false);
 		setActiveTab("view");
 		setErrors({});
 	};
 
 	// Handle view (read-only) application
-	const handleView = (id) => {
+	const handleView = (id: number) => {
 		const app = applications.find((a) => a.id === id);
 		if (!app) return;
-		const companyName = getCompanyName(app.companyId);
-
-		setNewApplication({
-			companyId: app.companyId.toString(),
-			newCompany: "",
-			role: app.role,
-			dateApplied: normalizeDateToInput(app.dateApplied),
-			interviewDate:
-				app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ""),
-			status: app.status,
-			notes: app.notes,
-			files: app.files,
-			contacts: Array.isArray(app.contacts)
-				? app.contacts
-				: app.metadata && Array.isArray(app.metadata.contacts)
-					? app.metadata.contacts
-					: [],
-			statusNotes: app.statusNotes || "",
-		});
-		setCompanyQuery(companyName);
+		loadApplicationIntoForm(app);
 
 		// Navigate to a full-page view rather than opening the modal
 		setViewSourceTab(activeTab);
+		setReturnToViewAfterEdit(false);
 		setViewingId(id);
 		setEditingId(null);
 		setShowAddForm(false);
@@ -1670,7 +1739,7 @@ export default function App() {
 
 	// Handle delete application (open confirmation)
 	// Track where the delete popup was invoked from
-	const [deleteSourceTab, setDeleteSourceTab] = useState(null);
+	const [deleteSourceTab, setDeleteSourceTab] = useState<string | null>(null);
 
 	// Inline status change for application rows (applications page)
 	const handleInlineStatusChange = async (appId: number, newStatus: string) => {
@@ -1699,14 +1768,14 @@ export default function App() {
 			);
 
 			toast.success("Status updated");
-		} catch (err) {
+		} catch (_err) {
 			toast.error("Failed to update status");
 		} finally {
 			setInlineStatusSaving((prev) => ({ ...prev, [appId]: false }));
 		}
 	};
 	const [inlineStatusSaving, setInlineStatusSaving] = useState<Record<number, boolean>>({});
-	const handleDelete = (id) => {
+	const handleDelete = (id: number) => {
 		const app = applications.find((a) => a.id === id);
 		if (!app) return;
 		setDeleteTarget(app);
@@ -1737,7 +1806,7 @@ export default function App() {
 				setActiveTab("dashboard");
 			}
 			setDeleteSourceTab(null);
-		} catch (err) {
+		} catch (_err) {
 			toast.error("Failed to delete application.");
 		}
 	};
@@ -1753,27 +1822,19 @@ export default function App() {
 		setViewSourceTab(null);
 		setViewingId(null);
 		setEditingId(null);
-		setNewApplication({
-			companyId: "",
-			newCompany: "",
-			role: "",
-			dateApplied: getTodayISO(),
-			status: "Applied",
-			notes: "",
-			files: [],
-			contacts: [],
-		});
+		setNewApplication(createEmptyApplicationForm());
 		setErrors({});
 		setCompanyQuery("");
 		setCompanyDropdownOpen(false);
 		setViewSourceTab(activeTab);
+		setReturnToViewAfterEdit(false);
 		setIsAddingNew(true);
 		setShowAddForm(false);
 		setActiveTab("view");
-	}, []);
+	}, [activeTab]);
 
 	// Open Add Application form prepopulated for a specific company
-	const openAddForCompany = useCallback((companyId, companyName) => {
+	const openAddForCompany = useCallback((companyId: number, companyName?: string) => {
 		// open the full-page Add view with company prefilled
 		setEditingId(null);
 		setViewingId(null);
@@ -1791,19 +1852,81 @@ export default function App() {
 		setCompanyQuery(companyName || "");
 		setCompanyDropdownOpen(false);
 		setViewSourceTab(activeTab);
+		setReturnToViewAfterEdit(false);
 		setIsAddingNew(true);
 		setShowAddForm(false);
 		setActiveTab("view");
 		setErrors({});
-	}, []);
+	}, [activeTab]);
 
 	// Get company name by ID - memoized for use in export
 	const getCompanyName = useCallback(
-		(id) => {
+		(id: number) => {
 			return companyMap.get(id) || "Unknown";
 		},
 		[companyMap],
 	);
+
+	const loadApplicationIntoForm = useCallback(
+		(app: ApplicationRecord) => {
+			const companyName = getCompanyName(app.companyId);
+
+			setNewApplication({
+				companyId: app.companyId.toString(),
+				newCompany: "",
+				role: app.role,
+				dateApplied: normalizeDateToInput(app.dateApplied),
+				interviewDate:
+					app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ""),
+				status: app.status,
+				notes: app.notes,
+				files: app.files,
+				contacts: Array.isArray(app.contacts)
+					? app.contacts
+					: app.metadata && Array.isArray(app.metadata.contacts)
+						? app.metadata.contacts
+						: [],
+				statusNotes: app.statusNotes || "",
+			});
+			setCompanyQuery(companyName);
+			setErrors({});
+		},
+		[getCompanyName],
+	);
+
+	const returnToPreviousPage = useCallback(() => {
+		if (editingId && returnToViewAfterEdit && viewingId) {
+			const app = applications.find((a) => a.id === viewingId);
+			if (app) {
+				loadApplicationIntoForm(app);
+				setEditingId(null);
+				setShowAddForm(false);
+				setIsAddingNew(false);
+				setCompanyDropdownOpen(false);
+				setFilesToDelete([]);
+				setActiveTab("view");
+				setReturnToViewAfterEdit(false);
+				return;
+			}
+		}
+
+		setShowAddForm(false);
+		setViewingId(null);
+		setEditingId(null);
+		setActiveTab(viewSourceTab || "applications");
+		setCompanyQuery("");
+		setCompanyDropdownOpen(false);
+		setFilesToDelete([]);
+		setIsAddingNew(false);
+		setReturnToViewAfterEdit(false);
+	}, [
+		applications,
+		editingId,
+		loadApplicationIntoForm,
+		returnToViewAfterEdit,
+		viewingId,
+		viewSourceTab,
+	]);
 
 	// Handle export to Excel
 	const handleExport = useCallback(() => {
@@ -1857,13 +1980,16 @@ export default function App() {
 	const [showImportModal, setShowImportModal] = useState(false);
 	const importFileRef = useRef<HTMLInputElement | null>(null);
 	const [isImporting, setIsImporting] = useState(false);
+	const setImportFileInputRef = useCallback((element: HTMLInputElement | null) => {
+		importFileRef.current = element;
+	}, []);
 
 	// Clear selected file when modal is closed
 	useEffect(() => {
 		if (!showImportModal && importFileRef.current) {
 			try {
 				importFileRef.current.value = "";
-			} catch (e) {
+			} catch (_e) {
 				/* ignore */
 			}
 		}
@@ -1888,7 +2014,7 @@ export default function App() {
 			const wb = XLSX.read(buf, { type: "array" });
 			const sheetName = wb.SheetNames[0];
 			const sheet = wb.Sheets[sheetName];
-			const rows: Array<any> = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+			const rows: SpreadsheetRow[] = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
 
 			if (!rows.length) {
 				toast.error("No data found in the sheet");
@@ -1897,9 +2023,11 @@ export default function App() {
 			}
 
 			// Normalize headers (case-insensitive)
-			const firstRow = rows[0];
+			const firstRow = rows[0] as SpreadsheetRow;
 			const headerMap: Record<string, string> = {};
-			Object.keys(firstRow).forEach((h) => (headerMap[h.trim().toLowerCase()] = h));
+			for (const header of Object.keys(firstRow)) {
+				headerMap[header.trim().toLowerCase()] = header;
+			}
 
 			const reqCols = ["company name", "role", "date applied", "status"];
 			const missing = reqCols.filter((c) => !Object.prototype.hasOwnProperty.call(headerMap, c));
@@ -1914,9 +2042,9 @@ export default function App() {
 
 			for (const r of rows) {
 				const companyName = (r[headerMap["company name"]] || "").toString().trim();
-				const role = (r[headerMap["role"]] || "").toString().trim();
+				const role = (r[headerMap.role] || "").toString().trim();
 				const dateVal = r[headerMap["date applied"]];
-				const statusVal = (r[headerMap["status"]] || "").toString().trim();
+				const statusVal = (r[headerMap.status] || "").toString().trim();
 
 				if (!companyName || !role) {
 					failedCount++;
@@ -1934,9 +2062,9 @@ export default function App() {
 				if (dateVal) {
 					try {
 						const parsed = new Date(dateVal);
-						if (!isNaN(parsed.getTime())) applied_date = normalizeDateToInput(parsed);
+						if (!Number.isNaN(parsed.getTime())) applied_date = normalizeDateToInput(parsed);
 						else applied_date = normalizeDateToInput(dateVal);
-					} catch (e) {
+					} catch (_e) {
 						applied_date = getTodayISO();
 					}
 				}
@@ -1965,7 +2093,7 @@ export default function App() {
 							role: created.title,
 							dateApplied: normalizeDateToInput(created.applied_date),
 							dateAppliedTs: created.applied_date
-								? new Date(normalizeDateToInput(created.applied_date) + "T00:00:00").getTime()
+								? toStartOfDayTimestamp(normalizeDateToInput(created.applied_date))
 								: 0,
 							status: created.status,
 							notes: created.metadata?.notes || "",
@@ -1991,8 +2119,8 @@ export default function App() {
 	// Mark file for deletion (actual deletion happens on Update)
 	const removeFile = (file: { id?: number; name: string; url?: string }) => {
 		// If file has an id, it's already uploaded - mark for deletion on save
-		if (file.id) {
-			setFilesToDelete((prev) => [...prev, { id: file.id!, name: file.name }]);
+		if (typeof file.id === "number") {
+			setFilesToDelete((prev) => [...prev, { id: file.id, name: file.name }]);
 		}
 
 		// Remove from local state (visual removal)
@@ -2165,7 +2293,7 @@ export default function App() {
 						</button>
 					</div>
 					<div className="mt-4">
-						<input ref={(el) => (importFileRef.current = el)} type="file" accept=".xls,.xlsx" />
+						<input ref={setImportFileInputRef} type="file" accept=".xls,.xlsx" />
 					</div>
 					<div className="mt-4 flex justify-end">
 						<button
@@ -2182,11 +2310,7 @@ export default function App() {
 							}
 							disabled={
 								isImporting ||
-								!(
-									importFileRef.current &&
-									importFileRef.current.files &&
-									importFileRef.current.files.length
-								)
+								!(importFileRef.current?.files?.length)
 							}
 							className={`px-4 py-2 bg-gray-200 rounded ${isImporting ? "opacity-70 cursor-not-allowed" : ""}`}
 						>
@@ -2320,14 +2444,18 @@ export default function App() {
 												)}
 											</div>
 
-											<div className="border-l border-gray-300 h-8 ml-3 mr-1 shrink-0"></div>
+											<div className="border-l border-gray-300 h-8 ml-3 mr-1 shrink-0" />
 
 											<div className="flex min-w-0 flex-1 flex-wrap items-center gap-6">
 												<div className="flex items-center gap-2">
-													<label className="text-sm font-medium text-gray-600 whitespace-nowrap">
+													<label
+														htmlFor="status-filter"
+														className="text-sm font-medium text-gray-600 whitespace-nowrap"
+													>
 														Status:
 													</label>
 													<select
+														id="status-filter"
 														value={selectedStatus}
 														onChange={(e) => setSelectedStatus(e.target.value)}
 														className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[130px]"
@@ -2565,6 +2693,7 @@ export default function App() {
 															</select>
 															{inlineStatusSaving[app.id] && (
 																<svg
+																	aria-hidden="true"
 																	className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600"
 																	xmlns="http://www.w3.org/2000/svg"
 																	fill="none"
@@ -2577,12 +2706,12 @@ export default function App() {
 																		r="10"
 																		stroke="currentColor"
 																		strokeWidth="4"
-																	></circle>
+																	/>
 																	<path
 																		className="opacity-75"
 																		fill="currentColor"
 																		d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																	></path>
+																	/>
 																</svg>
 															)}
 														</div>
@@ -2782,10 +2911,11 @@ export default function App() {
 									<table className="min-w-full divide-y divide-gray-200">
 										<thead className="bg-gray-50">
 											<tr>
-												<th className="w-8 px-2 py-3"></th>
+												<th className="w-8 px-2 py-3" />
 												<th
 													className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
 													onClick={() => handleSort("companyId")}
+													onKeyDown={(event) => handleSortableKeyDown(event, "companyId")}
 												>
 													<div className="flex items-center space-x-1">
 														<span>Company</span>
@@ -2800,6 +2930,7 @@ export default function App() {
 												<th
 													className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[80px] max-w-[180px]"
 													onClick={() => handleSort("role")}
+													onKeyDown={(event) => handleSortableKeyDown(event, "role")}
 												>
 													<div className="flex items-center space-x-1">
 														<span>Role</span>
@@ -2814,6 +2945,7 @@ export default function App() {
 												<th
 													className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[100px] max-w-[120px]"
 													onClick={() => handleSort("dateApplied")}
+													onKeyDown={(event) => handleSortableKeyDown(event, "dateApplied")}
 												>
 													<div className="flex items-center space-x-1">
 														<span>Date Applied</span>
@@ -2828,6 +2960,7 @@ export default function App() {
 												<th
 													className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap min-w-[90px] max-w-[120px]"
 													onClick={() => handleSort("status")}
+													onKeyDown={(event) => handleSortableKeyDown(event, "status")}
 												>
 													<div className="flex items-center space-x-1">
 														<span>Status</span>
@@ -2855,12 +2988,16 @@ export default function App() {
 													</td>
 												</tr>
 											) : (
-												paginatedGroupedApplications.map((group: any) => (
+												paginatedGroupedApplications.map((group) => (
 													<React.Fragment key={group.companyId}>
 														{/* Company Row */}
 														<tr
 															className="bg-gray-50 hover:bg-gray-100 cursor-pointer"
 															onClick={() => toggleCompanyExpand(group.companyId)}
+															onKeyDown={(event) =>
+																handleExpandableRowKeyDown(event, group.companyId)
+															}
+															tabIndex={0}
 														>
 															<td className="px-2 py-3 text-center">
 																{expandedCompanies[group.companyId] ? (
@@ -2905,7 +3042,7 @@ export default function App() {
 														{expandedCompanies[group.companyId] &&
 															group.applications.map((app) => (
 																<tr key={app.id} className="hover:bg-gray-50">
-																	<td className="px-2 py-3"></td>
+																	<td className="px-2 py-3" />
 																	<td className="px-6 py-3 pl-10 whitespace-normal break-words">
 																		<span className="text-gray-400">{group.companyName}</span>
 																	</td>
@@ -2951,6 +3088,7 @@ export default function App() {
 																			</select>
 																			{inlineStatusSaving[app.id] && (
 																				<svg
+																					aria-hidden="true"
 																					className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600"
 																					xmlns="http://www.w3.org/2000/svg"
 																					fill="none"
@@ -2963,12 +3101,12 @@ export default function App() {
 																						r="10"
 																						stroke="currentColor"
 																						strokeWidth="4"
-																					></circle>
+																					/>
 																					<path
 																						className="opacity-75"
 																						fill="currentColor"
 																						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																					></path>
+																					/>
 																				</svg>
 																			)}
 																		</div>
@@ -3121,13 +3259,7 @@ export default function App() {
 													<div>
 														<button
 															onClick={() => {
-																// Go back to previous tab (dashboard or applications)
-																setViewingId(null);
-																setEditingId(null);
-																setActiveTab(viewSourceTab || "applications");
-																setCompanyQuery("");
-																setShowAddForm(false);
-																setIsAddingNew(false);
+																returnToPreviousPage();
 															}}
 															className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
 														>
@@ -3138,7 +3270,10 @@ export default function App() {
 													<div>
 														{editingId !== viewingId && (
 															<button
-																onClick={() => setEditingId(viewingId)}
+																onClick={() => {
+																	setReturnToViewAfterEdit(true);
+																	setEditingId(viewingId);
+																}}
 																className="px-4 py-2 border rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
 															>
 																Edit
@@ -3203,11 +3338,15 @@ export default function App() {
 										className="space-y-4"
 									>
 										<div className="relative">
-											<label className="block text-sm font-medium text-gray-700 mb-1">
+											<label
+												htmlFor="application-company"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
 												Company
 											</label>
 											<div>
 												<input
+													id="application-company"
 													type="text"
 													name="companyQuery"
 													value={companyQuery}
@@ -3284,10 +3423,14 @@ export default function App() {
 
 										{newApplication.companyId === "new" && (
 											<div>
-												<label className="block text-sm font-medium text-gray-700 mb-1">
+												<label
+													htmlFor="application-new-company"
+													className="block text-sm font-medium text-gray-700 mb-1"
+												>
 													New Company Name
 												</label>
 												<input
+													id="application-new-company"
 													type="text"
 													name="newCompany"
 													placeholder="Enter company name *"
@@ -3305,8 +3448,14 @@ export default function App() {
 										)}
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+											<label
+												htmlFor="application-role"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
+												Role
+											</label>
 											<input
+												id="application-role"
 												type="text"
 												name="role"
 												placeholder="e.g., Frontend Engineer *"
@@ -3320,7 +3469,10 @@ export default function App() {
 										</div>
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">
+											<label
+												htmlFor="application-date-applied"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
 												Date Applied
 											</label>
 											{formDisabled ? (
@@ -3329,17 +3481,18 @@ export default function App() {
 												</div>
 											) : showNativeDateApplied ? (
 												<input
+													id="application-date-applied"
 													type="date"
 													name="dateApplied"
 													max={todayISO}
 													value={newApplication.dateApplied}
 													onChange={handleInputChange}
 													onBlur={() => setShowNativeDateApplied(false)}
-													autoFocus
 													className={`w-full border rounded-md px-3 py-2 ${errors.dateApplied ? "border-red-500" : ""}`}
 												/>
 											) : (
 												<input
+													id="application-date-applied"
 													type="text"
 													name="dateApplied_display"
 													value={
@@ -3358,7 +3511,10 @@ export default function App() {
 											)}
 										</div>
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">
+											<label
+												htmlFor="application-interview-date"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
 												Interview Date
 											</label>
 											{formDisabled ? (
@@ -3369,16 +3525,17 @@ export default function App() {
 												</div>
 											) : showNativeInterviewDate ? (
 												<input
+													id="application-interview-date"
 													type="date"
 													name="interviewDate"
 													value={newApplication.interviewDate || ""}
 													onChange={handleInputChange}
 													onBlur={() => setShowNativeInterviewDate(false)}
-													autoFocus
-													className={`w-full border rounded-md px-3 py-2`}
+													className="w-full border rounded-md px-3 py-2"
 												/>
 											) : (
 												<input
+													id="application-interview-date"
 													type="text"
 													name="interviewDate_display"
 													value={
@@ -3389,7 +3546,7 @@ export default function App() {
 													placeholder="dd-mm-YYYY"
 													onFocus={() => setShowNativeInterviewDate(true)}
 													readOnly
-													className={`w-full border rounded-md px-3 py-2`}
+													className="w-full border rounded-md px-3 py-2"
 												/>
 											)}
 											{errors.interviewDate && (
@@ -3398,8 +3555,14 @@ export default function App() {
 										</div>
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+											<label
+												htmlFor="application-status"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
+												Status
+											</label>
 											<select
+												id="application-status"
 												name="status"
 												value={newApplication.status}
 												onChange={handleInputChange}
@@ -3416,8 +3579,14 @@ export default function App() {
 										</div>
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+											<label
+												htmlFor="application-notes"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
+												Notes
+											</label>
 											<textarea
+												id="application-notes"
 												name="notes"
 												placeholder="e.g., applied via LinkedIn"
 												value={normalizeNewlines(String(newApplication.notes || ""))}
@@ -3428,9 +3597,7 @@ export default function App() {
 										</div>
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">
-												Contacts
-											</label>
+											<div className="block text-sm font-medium text-gray-700 mb-1">Contacts</div>
 											<div className="space-y-2">
 												{!newApplication.contacts || newApplication.contacts.length === 0 ? (
 													<div className="text-sm text-gray-500">No contacts added</div>
@@ -3503,10 +3670,14 @@ export default function App() {
 
 										{(editingId || viewingId) && (
 											<div>
-												<label className="block text-sm font-medium text-gray-700 mb-1">
+												<label
+													htmlFor="application-status-history"
+													className="block text-sm font-medium text-gray-700 mb-1"
+												>
 													Status History
 												</label>
 												<textarea
+													id="application-status-history"
 													name="statusNotes"
 													value={String(newApplication.statusNotes || "").replace(
 														/^\s*-{3,}\s*$/gm,
@@ -3522,7 +3693,10 @@ export default function App() {
 										)}
 
 										<div>
-											<label className="block text-sm font-medium text-gray-700 mb-1">
+											<label
+												htmlFor="application-documents"
+												className="block text-sm font-medium text-gray-700 mb-1"
+											>
 												Documents
 											</label>
 											<div className="space-y-2">
@@ -3606,13 +3780,15 @@ export default function App() {
 												{!formDisabled && (
 													<>
 														<input
+															id="application-documents"
 															type="file"
 															ref={fileInputRef}
 															className="hidden"
 															multiple
 															onChange={handleFileUpload}
 														/>
-														<div
+														<button
+															type="button"
 															onDragOver={(e) => {
 																e.preventDefault();
 																if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -3638,7 +3814,18 @@ export default function App() {
 																	handleFiles(e.dataTransfer.files);
 															}}
 															onClick={() => fileInputRef.current?.click()}
-															className={`w-full h-24 flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-colors ${dragFiles ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"}`}
+															onKeyDown={(event) => {
+																if (event.key === "Enter" || event.key === " ") {
+																	event.preventDefault();
+																	fileInputRef.current?.click();
+																}
+															}}
+															style={{
+																border: `2px dashed ${dragFiles ? "#60a5fa" : "#cbd5e1"}`,
+																borderRadius: "0.5rem",
+																backgroundColor: dragFiles ? "#eff6ff" : "#ffffff",
+															}}
+															className="w-full h-24 flex flex-col items-center justify-center cursor-pointer transition-colors hover:bg-gray-50"
 														>
 															<Upload className="h-8 w-8 text-gray-400 mb-2" />
 															<span className="text-sm text-gray-600">
@@ -3649,7 +3836,7 @@ export default function App() {
 																Upload resumes, cover letters, job descriptions, or any related
 																documents
 															</span>
-														</div>
+														</button>
 													</>
 												)}
 											</div>
@@ -3662,13 +3849,7 @@ export default function App() {
 											<button
 												type="button"
 												onClick={() => {
-													// Go back to the tab that opened the view (dashboard/applications)
-													setShowAddForm(false);
-													setViewingId(null);
-													setEditingId(null);
-													setActiveTab(viewSourceTab || "applications");
-													setCompanyQuery("");
-													setCompanyDropdownOpen(false);
+													returnToPreviousPage();
 												}}
 												className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
 											>
@@ -3683,14 +3864,7 @@ export default function App() {
 												<button
 													type="button"
 													onClick={() => {
-														// Close the form and navigate back to the applications list (same as Back to List)
-														setShowAddForm(false);
-														setViewingId(null);
-														setEditingId(null);
-														setActiveTab(viewSourceTab || "applications");
-														setCompanyQuery("");
-														setCompanyDropdownOpen(false);
-														setFilesToDelete([]); // Clear files marked for deletion
+														returnToPreviousPage();
 													}}
 													className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
 													disabled={isSaving}
@@ -3729,6 +3903,7 @@ export default function App() {
 												>
 													{isSaving && (
 														<svg
+															aria-hidden="true"
 															className="animate-spin h-4 w-4 text-white"
 															xmlns="http://www.w3.org/2000/svg"
 															fill="none"
@@ -3741,12 +3916,12 @@ export default function App() {
 																r="10"
 																stroke="currentColor"
 																strokeWidth="4"
-															></circle>
+															/>
 															<path
 																className="opacity-75"
 																fill="currentColor"
 																d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-															></path>
+															/>
 														</svg>
 													)}
 													<span>
