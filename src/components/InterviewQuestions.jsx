@@ -1,16 +1,6 @@
 import { createElement, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import ReactDOM from "react-dom";
-import {
-	Plus,
-	X,
-	ChevronDown,
-	ChevronUp,
-	Edit,
-	Trash2,
-	ArrowUp,
-	Loader2,
-	FileDown,
-} from "lucide-react";
+import { Plus, X, ChevronDown, ChevronUp, Edit, Trash2, ArrowUp, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { RichTextEditor } from "./RichTextEditor";
 import {
@@ -19,7 +9,6 @@ import {
 	prepareAnswerForEditor,
 	renderAnswerHtml,
 } from "../utils/interviewAnswerFormat";
-import { exportInterviewQuestionsPdf } from "../utils/interviewQuestionsPdf";
 
 const categories = [
 	"Architecture",
@@ -190,7 +179,6 @@ export function InterviewQuestions() {
 	const [showToast, setShowToast] = useState(false);
 	const [savingQuestion, setSavingQuestion] = useState(false);
 	const [savingInterviewerQuestion, setSavingInterviewerQuestion] = useState(false);
-	const [isExportingPdf, setIsExportingPdf] = useState(false);
 	const toastTimerRef = useRef(null);
 	const questionInputRef = useRef(null);
 	const interviewerQuestionInputRef = useRef(null);
@@ -377,23 +365,6 @@ export function InterviewQuestions() {
 		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
 		toastTimerRef.current = setTimeout(() => setShowToast(false), 3000);
 	}, []);
-	const handleExportPdf = useCallback(async () => {
-		if (isExportingPdf) return;
-
-		setIsExportingPdf(true);
-		try {
-			const filename = await exportInterviewQuestionsPdf({
-				questions,
-				interviewerQuestions,
-			});
-			showTemporaryToast(`Exported PDF: ${filename}`);
-		} catch (error) {
-			console.error("PDF export failed", error);
-			window.alert(`Failed to export PDF: ${getErrorMessage(error)}`);
-		} finally {
-			setIsExportingPdf(false);
-		}
-	}, [interviewerQuestions, isExportingPdf, questions, showTemporaryToast]);
 
 	const handleInputChange = (e) => {
 		const { name, value } = e.target;
@@ -728,9 +699,9 @@ export function InterviewQuestions() {
 	}, []);
 
 	return (
-		<div className="w-full space-y-6">
-			<div className="relative mb-2 w-full sm:pr-44">
-				<div className="min-w-0 overflow-x-auto pb-1">
+		<div className="space-y-6">
+			<div className="mb-2">
+				<div className="overflow-x-auto pb-1">
 					<div
 						role="tablist"
 						aria-label="Interview question sections"
@@ -756,21 +727,6 @@ export function InterviewQuestions() {
 							);
 						})}
 					</div>
-				</div>
-				<div className="mt-3 flex w-full justify-start sm:absolute sm:right-0 sm:top-0 sm:mt-0 sm:w-auto sm:justify-end">
-					<button
-						type="button"
-						onClick={handleExportPdf}
-						disabled={isExportingPdf}
-						className="inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70"
-					>
-						{isExportingPdf ? (
-							<Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-						) : (
-							<FileDown className="h-4 w-4 shrink-0" aria-hidden />
-						)}
-						<span>{isExportingPdf ? "Exporting..." : "Export PDF"}</span>
-					</button>
 				</div>
 			</div>
 
