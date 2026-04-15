@@ -663,8 +663,8 @@ export default function App() {
 				: window.location.pathname;
 			window.history.pushState({}, "", newUrl);
 		} catch (_e) {
-			// ignore in non-browser environments
-		}
+	} catch (_err) {
+	} catch (_err) {
 	}, []);
 
 	// Clear search input and reset applications view to default (no search)
@@ -2158,25 +2158,25 @@ export default function App() {
 				<div className="max-w-7xl mx-auto flex justify-between items-center">
 					<h1 className="text-2xl font-bold">Job Applications Tracker</h1>
 					<nav className="hidden md:flex space-x-4">
-						<button
+						<button type="button"
 							onClick={() => setActiveTab("dashboard")}
 							className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "dashboard" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
 						>
 							Dashboard
 						</button>
-						<button
+						<button type="button"
 							onClick={() => setActiveTab("applications")}
 							className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "applications" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
 						>
 							Applications
 						</button>
-						<button
+						<button type="button"
 							onClick={() => setActiveTab("interviews")}
 							className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "interviews" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
 						>
 							Interviews
 						</button>
-						<button
+						<button type="button"
 							onClick={() => setActiveTab("questions")}
 							className={`px-3 py-2 rounded-md cursor-pointer ${activeTab === "questions" ? "bg-blue-600 text-white" : "hover:bg-gray-100"}`}
 						>

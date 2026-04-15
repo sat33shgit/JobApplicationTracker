@@ -198,6 +198,7 @@ export function InterviewQuestions() {
 
 	const [categoryFilter, setCategoryFilter] = useState("");
 	const [companyFilter, setCompanyFilter] = useState("");
+	const [roleFilter, setRoleFilter] = useState("");
 	const [sampleFilter, setSampleFilter] = useState(false);
 	const [interviewerCompanyFilter, setInterviewerCompanyFilter] = useState("");
 	const [interviewerRoleFilter, setInterviewerRoleFilter] = useState("");
@@ -219,6 +220,13 @@ export function InterviewQuestions() {
 			).sort(),
 		[questions],
 	);
+	const availableRoles = useMemo(
+		() =>
+			Array.from(
+				new Set((questions || []).map((q) => (q.role || "").trim()).filter(Boolean)),
+			).sort(),
+		[questions],
+	);
 	const availableInterviewerCompanies = useMemo(
 		() =>
 			Array.from(
@@ -237,14 +245,15 @@ export function InterviewQuestions() {
 	const filteredQuestions = useMemo(
 		() =>
 			questions.filter((q) => {
-				if (sampleFilter && !q.sample) return false;
-				if (categoryFilter && q.category !== categoryFilter) return false;
-				if (companyFilter && (q.company || "").trim() !== companyFilter) return false;
+					if (sampleFilter && !q.sample) return false;
+					if (categoryFilter && q.category !== categoryFilter) return false;
+					if (companyFilter && (q.company || "").trim() !== companyFilter) return false;
+					if (roleFilter && (q.role || "").trim() !== roleFilter) return false;
 				const searchString =
 					`${q.question} ${q.plainAnswer || ""} ${q.category} ${q.company || ""} ${q.role || ""}`.toLowerCase();
 				return searchString.includes(searchTerm.toLowerCase());
 			}),
-		[questions, searchTerm, categoryFilter, companyFilter, sampleFilter],
+		[questions, searchTerm, categoryFilter, companyFilter, sampleFilter, roleFilter],
 	);
 	const filteredInterviewerQuestions = useMemo(
 		() =>
@@ -849,6 +858,22 @@ export function InterviewQuestions() {
 									</select>
 								</div>
 
+								<div className="w-56 shrink-0">
+									<select
+										value={roleFilter}
+										onChange={(e) => setRoleFilter(e.target.value)}
+										aria-label="Role"
+										className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+									>
+										<option value="">All roles</option>
+										{availableRoles.map((r) => (
+											<option key={r} value={r}>
+												{r}
+											</option>
+										))}
+									</select>
+								</div>
+
 								<div className="flex items-center gap-2 px-2">
 									<label className="inline-flex items-center text-sm text-gray-700">
 										<input
@@ -867,6 +892,7 @@ export function InterviewQuestions() {
 										setSearchTerm("");
 										setCategoryFilter("");
 										setCompanyFilter("");
+										setRoleFilter("");
 										setSampleFilter(false);
 									}}
 									className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm leading-normal text-gray-700 hover:bg-gray-100"
