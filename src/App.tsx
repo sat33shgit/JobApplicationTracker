@@ -58,6 +58,7 @@ type ApplicationFile = {
 };
 
 type ApplicationContact = {
+	localId?: string;
 	name?: string | null;
 	email?: string | null;
 	phone?: string | null;
@@ -197,6 +198,33 @@ const createEmptyApplicationForm = (): ApplicationFormState => ({
 	files: [],
 	contacts: [],
 });
+let localContactIdSequence = 0;
+const createContactLocalId = () => {
+	if (typeof globalThis.crypto?.randomUUID === "function") {
+		return globalThis.crypto.randomUUID();
+	}
+	localContactIdSequence += 1;
+	return `contact-${localContactIdSequence}`;
+};
+const createEmptyApplicationContact = (): ApplicationContact => ({
+	localId: createContactLocalId(),
+	name: "",
+	email: "",
+	phone: "",
+});
+const normalizeApplicationContacts = (contacts?: ApplicationContact[] | null) =>
+	(Array.isArray(contacts) ? contacts : []).map((contact) => ({
+		...contact,
+		localId:
+			typeof contact.localId === "string" && contact.localId
+				? contact.localId
+				: createContactLocalId(),
+	}));
+const getApplicationFileKey = (file: ApplicationFile) => {
+	const storageKey = typeof file.storageKey === "string" ? file.storageKey : null;
+	const legacyStorageKey = typeof file.storage_key === "string" ? file.storage_key : null;
+	return String(file.id ?? storageKey ?? legacyStorageKey ?? file.url ?? file.name);
+};
 
 // Maximum allowed file size for each upload (5 MB)
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -663,8 +691,8 @@ export default function App() {
 				: window.location.pathname;
 			window.history.pushState({}, "", newUrl);
 		} catch (_e) {
-	} catch (_err) {
-	} catch (_err) {
+			// ignore in non-browser environments
+		}
 	}, []);
 
 	// Clear search input and reset applications view to default (no search)
@@ -700,8 +728,6 @@ export default function App() {
 			const q = params.toString();
 			const newUrl = q ? `${window.location.pathname}?${q}` : window.location.pathname;
 			window.history.pushState({}, "", newUrl);
-			if (selectedStatus) params.set("status", selectedStatus);
-			else params.delete("status");
 		} catch (_e) {
 			// ignore
 		}
@@ -1219,7 +1245,7 @@ export default function App() {
 	const addContact = useCallback(() => {
 		setNewApplication((prev) => ({
 			...prev,
-			contacts: [...(prev.contacts || []), { name: "", email: "", phone: "" }],
+			contacts: [...(prev.contacts || []), createEmptyApplicationContact()],
 		}));
 	}, []);
 
@@ -1602,9 +1628,9 @@ export default function App() {
 						dateApplied: updatedApplication.dateApplied,
 						interviewDate: updatedApplication.interviewDate,
 						status: updatedApplication.status,
-						notes: updatedApplication.notes,
-						files: updatedApplication.files,
-						contacts: updatedApplication.contacts,
+						notes: updatedApplication.notes || "",
+						files: updatedApplication.files || [],
+						contacts: normalizeApplicationContacts(updatedApplication.contacts),
 						statusNotes: updatedApplication.statusNotes,
 					});
 					setCompanyQuery(getCompanyName(companyId));
@@ -1839,15 +1865,8 @@ export default function App() {
 		setEditingId(null);
 		setViewingId(null);
 		setNewApplication({
+			...createEmptyApplicationForm(),
 			companyId: String(companyId),
-			newCompany: "",
-			role: "",
-			dateApplied: getTodayISO(),
-			interviewDate: "",
-			status: "Applied",
-			notes: "",
-			files: [],
-			contacts: [],
 		});
 		setCompanyQuery(companyName || "");
 		setCompanyDropdownOpen(false);
@@ -1879,13 +1898,15 @@ export default function App() {
 				interviewDate:
 					app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ""),
 				status: app.status,
-				notes: app.notes,
-				files: app.files,
-				contacts: Array.isArray(app.contacts)
-					? app.contacts
-					: app.metadata && Array.isArray(app.metadata.contacts)
-						? app.metadata.contacts
-						: [],
+				notes: app.notes || "",
+				files: app.files || [],
+				contacts: normalizeApplicationContacts(
+					Array.isArray(app.contacts)
+						? app.contacts
+						: app.metadata && Array.isArray(app.metadata.contacts)
+							? app.metadata.contacts
+							: [],
+				),
 				statusNotes: app.statusNotes || "",
 			});
 			setCompanyQuery(companyName);
@@ -2102,14 +2123,14 @@ export default function App() {
 						},
 					]);
 					createdCount++;
-				} catch (e) {
+				} catch (_e) {
 					failedCount++;
 				}
 			}
 
 			toast.success(`Import finished. Created: ${createdCount}, Failed: ${failedCount}`);
 			setShowImportModal(false);
-		} catch (err) {
+		} catch (_err) {
 			toast.error("Import failed.");
 		} finally {
 			setIsImporting(false);
@@ -2196,7 +2217,7 @@ export default function App() {
 						</select>
 					</div>
 					<div className="ml-4 flex items-center space-x-2 shrink-0">
-						<button
+						<button type="button"
 							onClick={() => {
 								setActiveTab("applications");
 								setFocusSearchRequest(true);
@@ -2207,7 +2228,7 @@ export default function App() {
 						>
 							<Search className="h-5 w-5" />
 						</button>
-						<button
+						<button type="button"
 							onClick={openAddForm}
 							className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700 cursor-pointer"
 						>
@@ -2253,13 +2274,13 @@ export default function App() {
 				</div>
 				<div className="border-t border-gray-200 my-4 mb-4" />
 				<div className="mt-6 flex justify-end gap-2">
-					<button
+					<button type="button"
 						onClick={cancelDelete}
 						className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50"
 					>
 						Cancel
 					</button>
-					<button
+					<button type="button"
 						onClick={confirmDelete}
 						className="px-4 py-2 border border-red-500 text-red-600 rounded-md hover:bg-red-50 cursor-pointer"
 					>
@@ -2285,7 +2306,7 @@ export default function App() {
 								'status'.
 							</p>
 						</div>
-						<button
+						<button type="button"
 							onClick={() => setShowImportModal(false)}
 							className="text-gray-400 hover:text-gray-600"
 						>
@@ -2296,13 +2317,13 @@ export default function App() {
 						<input ref={setImportFileInputRef} type="file" accept=".xls,.xlsx" />
 					</div>
 					<div className="mt-4 flex justify-end">
-						<button
+						<button type="button"
 							onClick={() => setShowImportModal(false)}
 							className="px-4 py-2 border rounded mr-2"
 						>
 							Cancel
 						</button>
-						<button
+						<button type="button"
 							onClick={() =>
 								handleImportFile(
 									importFileRef.current?.files ? importFileRef.current.files[0] : null,
@@ -2336,19 +2357,19 @@ export default function App() {
 									<div className="flex justify-between items-center">
 										<h2 className="text-2xl font-bold text-gray-900">Application Statistics</h2>
 										<div className="flex space-x-2">
-											<button
+											<button type="button"
 												onClick={() => handleTimeframeChange("daily")}
 												className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "daily" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
 											>
 												Daily
 											</button>
-											<button
+											<button type="button"
 												onClick={() => handleTimeframeChange("monthly")}
 												className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "monthly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
 											>
 												Monthly
 											</button>
-											<button
+											<button type="button"
 												onClick={() => handleTimeframeChange("yearly")}
 												className={`px-3 py-1 text-sm rounded-md cursor-pointer ${selectedTimeframe === "yearly" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
 											>
@@ -2493,19 +2514,19 @@ export default function App() {
 												<span className="text-sm font-medium text-gray-600 whitespace-nowrap">
 													Quick range:
 												</span>
-												<button
+												<button type="button"
 													onClick={() => handleQuickRange(10)}
 													className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
 												>
 													Last 10 days
 												</button>
-												<button
+												<button type="button"
 													onClick={() => handleQuickRange(20)}
 													className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
 												>
 													Last 20 days
 												</button>
-												<button
+												<button type="button"
 													onClick={() => handleQuickRange(30)}
 													className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors cursor-pointer"
 												>
@@ -2601,9 +2622,9 @@ export default function App() {
 													>
 														{stats.status
 															.filter((s) => s.value > 0)
-															.map((entry, index) => (
+															.map((entry) => (
 																<Cell
-																	key={`cell-${index}`}
+																	key={entry.name}
 																	fill={COLORS[statusOptions.indexOf(entry.name) % COLORS.length]}
 																/>
 															))}
@@ -2626,7 +2647,7 @@ export default function App() {
 											</ResponsiveContainer>
 										</div>
 										<div className="mt-4 flex justify-center">
-											<button
+											<button type="button"
 												onClick={openApplicationsWithFilters}
 												disabled={stats.total === 0}
 												className={`px-4 py-2 text-sm rounded-md transition-colors ${stats.total === 0 ? "bg-gray-100 text-gray-400 cursor-not-allowed border" : "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"}`}
@@ -2641,7 +2662,7 @@ export default function App() {
 							<div className="bg-white rounded-lg shadow-md p-6">
 								<div className="flex justify-between items-center mb-6">
 									<h2 className="text-2xl font-bold text-gray-900">Recent Applications (Top 10)</h2>
-									<button
+									<button type="button"
 										onClick={openApplicationsNoFilters}
 										className="text-blue-600 hover:text-blue-800 cursor-pointer"
 									>
@@ -2718,21 +2739,21 @@ export default function App() {
 													</td>
 													<td className="px-6 py-4 text-right">
 														<div className="flex items-center justify-end space-x-2">
-															<button
+															<button type="button"
 																title="View"
 																className="text-gray-600 hover:text-gray-900 cursor-pointer"
 																onClick={() => handleView(app.id)}
 															>
 																<Eye className="h-5 w-5" />
 															</button>
-															<button
+															<button type="button"
 																title="Edit"
 																className="text-blue-600 hover:text-blue-900 cursor-pointer"
 																onClick={() => handleEdit(app.id)}
 															>
 																<Edit className="h-5 w-5" />
 															</button>
-															<button
+															<button type="button"
 																title="Delete"
 																className="text-red-600 hover:text-red-900 cursor-pointer"
 																onClick={() => handleDelete(app.id)}
@@ -2802,7 +2823,7 @@ export default function App() {
 											{selectedStatus ? <span> · Status: {selectedStatus}</span> : null}
 										</div>
 										<div className="flex items-center space-x-2">
-											<button
+											<button type="button"
 												onClick={clearDateRange}
 												className="text-sm px-3 py-1 bg-white border rounded-md text-blue-600 hover:bg-blue-50 cursor-pointer"
 											>
@@ -2814,14 +2835,14 @@ export default function App() {
 								<div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2">
 									<h2 className="text-2xl font-bold text-gray-900">Job Applications</h2>
 									<div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-										<button
+										<button type="button"
 											onClick={handleImportClick}
 											className="flex items-center justify-center space-x-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 cursor-pointer"
 										>
 											<FileSpreadsheet className="h-5 w-5" />
 											<span>Import</span>
 										</button>
-										<button
+										<button type="button"
 											onClick={handleExport}
 											className="flex items-center justify-center space-x-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 cursor-pointer"
 										>
@@ -2845,7 +2866,7 @@ export default function App() {
 											/>
 											<Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
 										</div>
-										<button
+										<button type="button"
 											onClick={clearSearch}
 											className="text-sm px-3 py-2 bg-white border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
 											aria-label="Clear search"
@@ -2857,14 +2878,14 @@ export default function App() {
 
 								<div className="mb-4 flex justify-between items-center">
 									<div className="flex space-x-2">
-										<button
+										<button type="button"
 											onClick={expandAllCompanies}
 											className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
 										>
 											Expand All
 										</button>
 										<span className="text-gray-300 mx-3">|</span>
-										<button
+										<button type="button"
 											onClick={collapseAllCompanies}
 											className="ml-3 text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
 										>
@@ -2873,14 +2894,14 @@ export default function App() {
 									</div>
 									{/* Pagination controls for companies list */}
 									<div className="flex items-center space-x-2">
-										<button
+										<button type="button"
 											onClick={() => setCurrentPage(1)}
 											disabled={currentPage === 1}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border cursor-pointer"}`}
 										>
 											First
 										</button>
-										<button
+										<button type="button"
 											onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
 											disabled={currentPage === 1}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border cursor-pointer"}`}
@@ -2890,14 +2911,14 @@ export default function App() {
 										<span className="text-sm text-gray-700 px-2">
 											Page {currentPage} / {totalPages}
 										</span>
-										<button
+										<button type="button"
 											onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
 											disabled={currentPage === totalPages}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border cursor-pointer"}`}
 										>
 											Next
 										</button>
-										<button
+										<button type="button"
 											onClick={() => setCurrentPage(totalPages)}
 											disabled={currentPage === totalPages}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border cursor-pointer"}`}
@@ -3024,7 +3045,7 @@ export default function App() {
 																		</div>
 																	</div>
 																	<div className="flex items-center justify-end space-x-3 relative z-10">
-																		<button
+																		<button type="button"
 																			onClick={(e) => {
 																				e.stopPropagation();
 																				openAddForCompany(group.companyId, group.companyName);
@@ -3113,9 +3134,9 @@ export default function App() {
 																	</td>
 																	<td className="px-6 py-3">
 																		<div className="grid grid-cols-2 gap-1 max-w-[280px]">
-																			{app.files.map((file, index) => (
+																			{app.files.map((file) => (
 																				<a
-																					key={index}
+																					key={`${app.id}-${getApplicationFileKey(file)}`}
 																					href={
 																						file.id
 																							? `/api/uploads/${file.id}`
@@ -3307,16 +3328,7 @@ export default function App() {
 													setShowAddForm(false);
 													setEditingId(null);
 													setViewingId(null);
-													setNewApplication({
-														companyId: "",
-														newCompany: "",
-														role: "",
-														dateApplied: getTodayISO(),
-														status: "Applied",
-														notes: "",
-														files: [],
-														contacts: [],
-													});
+													setNewApplication(createEmptyApplicationForm());
 													setCompanyQuery("");
 													setCompanyDropdownOpen(false);
 													setFilesToDelete([]); // Clear files marked for deletion
@@ -3603,7 +3615,10 @@ export default function App() {
 													<div className="text-sm text-gray-500">No contacts added</div>
 												) : (
 													newApplication.contacts.map((c, idx) => (
-														<div key={idx} className="grid grid-cols-12 gap-2 items-center">
+														<div
+															key={c.localId || c.email || c.phone || c.name || "contact"}
+															className="grid grid-cols-12 gap-2 items-center"
+														>
 															<div className="col-span-4">
 																<div className="text-xs text-gray-500 mb-1">Contact {idx + 1}</div>
 																<input
