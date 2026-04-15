@@ -65,6 +65,7 @@ const createEmptyQuestion = (category = categories[0]) => ({
 	category,
 	company: "",
 	role: "",
+	sample: false,
 });
 
 const createEmptyInterviewerQuestion = () => ({
@@ -197,6 +198,7 @@ export function InterviewQuestions() {
 
 	const [categoryFilter, setCategoryFilter] = useState("");
 	const [companyFilter, setCompanyFilter] = useState("");
+	const [sampleFilter, setSampleFilter] = useState(false);
 	const [interviewerCompanyFilter, setInterviewerCompanyFilter] = useState("");
 	const [interviewerRoleFilter, setInterviewerRoleFilter] = useState("");
 
@@ -235,13 +237,14 @@ export function InterviewQuestions() {
 	const filteredQuestions = useMemo(
 		() =>
 			questions.filter((q) => {
+				if (sampleFilter && !q.sample) return false;
 				if (categoryFilter && q.category !== categoryFilter) return false;
 				if (companyFilter && (q.company || "").trim() !== companyFilter) return false;
 				const searchString =
 					`${q.question} ${q.plainAnswer || ""} ${q.category} ${q.company || ""} ${q.role || ""}`.toLowerCase();
 				return searchString.includes(searchTerm.toLowerCase());
 			}),
-		[questions, searchTerm, categoryFilter, companyFilter],
+		[questions, searchTerm, categoryFilter, companyFilter, sampleFilter],
 	);
 	const filteredInterviewerQuestions = useMemo(
 		() =>
@@ -283,8 +286,8 @@ export function InterviewQuestions() {
 				const data = await resp.json();
 				cachedInterviewQuestions = Array.isArray(data) ? data : [];
 				setFromRows(cachedInterviewQuestions);
-			} catch (err) {
-				console.error("Failed to load interview questions", err);
+			} catch (_err) {
+				// failed to load interview questions
 			}
 		}
 		load();
@@ -314,8 +317,8 @@ export function InterviewQuestions() {
 				const data = await resp.json();
 				cachedInterviewerQuestions = Array.isArray(data) ? data : [];
 				setFromRows(cachedInterviewerQuestions);
-			} catch (err) {
-				console.error("Failed to load interviewer questions", err);
+			} catch (_err) {
+				// failed to load interviewer questions
 			}
 		}
 		load();
@@ -345,11 +348,13 @@ export function InterviewQuestions() {
 	const collapseAll = () => setExpandedQuestions({});
 
 	const resetQuestionForm = useCallback((category = categories[0], preservedValues = {}) => {
-		setNewQuestion({
-			...createEmptyQuestion(category),
-			company: preservedValues.company || "",
-			role: preservedValues.role || "",
-		});
+		       setNewQuestion({
+			       ...createEmptyQuestion(category),
+			       company: preservedValues.company || "",
+			       role: preservedValues.role || "",
+			       // preserve sample flag when provided (used by Save and Add more)
+			       sample: preservedValues.sample === true || preservedValues.sample === 'true' || false,
+		       });
 		setErrors({});
 	}, []);
 	const resetInterviewerQuestionForm = useCallback((preservedValues = {}) => {
@@ -388,7 +393,6 @@ export function InterviewQuestions() {
 			});
 			showTemporaryToast(`Exported PDF: ${filename}`);
 		} catch (error) {
-			console.error("PDF export failed", error);
 			window.alert(`Failed to export PDF: ${getErrorMessage(error)}`);
 		} finally {
 			setIsExportingPdf(false);
@@ -396,9 +400,12 @@ export function InterviewQuestions() {
 	}, [interviewerQuestions, isExportingPdf, questions, showTemporaryToast]);
 
 	const handleInputChange = (e) => {
-		const { name, value } = e.target;
-		setNewQuestion((prev) => ({ ...prev, [name]: value }));
-		setErrors((prev) => ({ ...prev, [name]: "" }));
+		       const { name, type, checked, value } = e.target;
+		       setNewQuestion((prev) => ({
+			       ...prev,
+			       [name]: type === "checkbox" ? checked : value,
+		       }));
+		       setErrors((prev) => ({ ...prev, [name]: "" }));
 	};
 	const handleInterviewerInputChange = (e) => {
 		const { name, value } = e.target;
@@ -423,11 +430,12 @@ export function InterviewQuestions() {
 		setSavingQuestion(true);
 		try {
 			const payload = {
-				question: newQuestion.question,
-				answer: prepareAnswerForEditor(newQuestion.answer),
-				category: newQuestion.category,
-				company: newQuestion.company,
-				role: newQuestion.role,
+				   question: newQuestion.question,
+				   answer: prepareAnswerForEditor(newQuestion.answer),
+				   category: newQuestion.category,
+				   company: newQuestion.company,
+				   role: newQuestion.role,
+				   sample: !!newQuestion.sample,
 			};
 			let nextFormValues = null;
 
@@ -473,6 +481,7 @@ export function InterviewQuestions() {
 					category: created.category || payload.category,
 					company: created.company || payload.company || "",
 					role: created.role || payload.role || "",
+					sample: typeof created.sample !== 'undefined' ? !!created.sample : !!payload.sample,
 				};
 			}
 
@@ -482,12 +491,12 @@ export function InterviewQuestions() {
 				resetQuestionForm(nextFormValues?.category || payload.category, {
 					company: nextFormValues?.company || "",
 					role: nextFormValues?.role || "",
+					sample: typeof nextFormValues?.sample !== 'undefined' ? !!nextFormValues.sample : !!payload.sample,
 				});
 				focusFieldOnNextFrame(questionInputRef);
 			}
-		} catch (err) {
-			console.error("Save failed", err);
-			window.alert(`Failed to save question: ${getErrorMessage(err)}`);
+		} catch (_err) {
+			window.alert(`Failed to save question: ${getErrorMessage(_err)}`);
 		} finally {
 			setSavingQuestion(false);
 		}
@@ -570,9 +579,8 @@ export function InterviewQuestions() {
 				});
 				focusFieldOnNextFrame(interviewerQuestionInputRef);
 			}
-		} catch (err) {
-			console.error("Save interviewer question failed", err);
-			window.alert(`Failed to save interviewer question: ${getErrorMessage(err)}`);
+		} catch (_err) {
+			window.alert(`Failed to save interviewer question: ${getErrorMessage(_err)}`);
 		} finally {
 			setSavingInterviewerQuestion(false);
 		}
@@ -588,13 +596,14 @@ export function InterviewQuestions() {
 	const handleEdit = (id) => {
 		const q = questions.find((x) => x.id === id);
 		if (!q) return;
-		setNewQuestion({
-			question: q.question,
-			answer: prepareAnswerForEditor(q.answer),
-			category: q.category,
-			company: q.company || "",
-			role: q.role || "",
-		});
+		       setNewQuestion({
+			       question: q.question,
+			       answer: prepareAnswerForEditor(q.answer),
+			       category: q.category,
+			       company: q.company || "",
+			       role: q.role || "",
+			       sample: !!q.sample,
+		       });
 		setEditingId(id);
 		setShowAddForm(true);
 	};
@@ -697,10 +706,9 @@ export function InterviewQuestions() {
 			setPendingDelete(null);
 			setShowDeleteModal(false);
 			showTemporaryToast(deletedText ? `Deleted Successfully: ${deletedText}` : "Question deleted");
-		} catch (err) {
-			console.error("Delete failed", err);
+		} catch (_err) {
 			window.alert(
-				`Failed to delete ${isInterviewerQuestion ? "interviewer question" : "question"}: ${getErrorMessage(err)}`,
+				`Failed to delete ${isInterviewerQuestion ? "interviewer question" : "question"}: ${getErrorMessage(_err)}`,
 			);
 		}
 	};
@@ -841,12 +849,25 @@ export function InterviewQuestions() {
 									</select>
 								</div>
 
+								<div className="flex items-center gap-2 px-2">
+									<label className="inline-flex items-center text-sm text-gray-700">
+										<input
+											type="checkbox"
+											className="mr-2"
+											checked={sampleFilter}
+											onChange={(e) => setSampleFilter(e.target.checked)}
+										/>
+										Sample Question
+									</label>
+								</div>
+
 								<button
 									type="button"
 									onClick={() => {
 										setSearchTerm("");
 										setCategoryFilter("");
 										setCompanyFilter("");
+										setSampleFilter(false);
 									}}
 									className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm leading-normal text-gray-700 hover:bg-gray-100"
 									aria-label="Clear search and filters"
@@ -943,9 +964,10 @@ export function InterviewQuestions() {
 														<ChevronDown className="h-5 w-5 text-gray-500 flex-shrink-0 mr-1 chevron-fixed" />
 													)}
 													<div className="min-w-0">
-														<div className="font-medium text-gray-900 truncate">
-															{question.question}
-														</div>
+														   <div className="font-medium text-gray-900 truncate">
+															   {question.sample ? <span className="text-blue-700 font-semibold">(Sample) </span> : null}
+															   {question.question}
+														   </div>
 														{question.company || question.role ? (
 															<div className="text-sm text-gray-500 truncate">
 																{question.company ? question.company : ""}
@@ -1085,6 +1107,7 @@ export function InterviewQuestions() {
 											setInterviewerSearchTerm("");
 											setInterviewerCompanyFilter("");
 											setInterviewerRoleFilter("");
+											setSampleFilter(false);
 										}}
 										className="inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm leading-normal text-gray-700 hover:bg-gray-100"
 										aria-label="Clear interviewer question search and filters"
@@ -1187,6 +1210,7 @@ export function InterviewQuestions() {
 							</div>
 
 							<form onSubmit={handleSubmit} className="space-y-4">
+															   {/* Move Sample Question checkbox above the Question label */}
 								<div>
 									<label
 										htmlFor={formFieldIds.category}
@@ -1247,28 +1271,41 @@ export function InterviewQuestions() {
 									/>
 								</div>
 
-								<div>
-									<label
-										htmlFor={formFieldIds.question}
-										className="block text-sm font-medium text-gray-700 mb-1"
-									>
-										Question *
-									</label>
-									<textarea
-										id={formFieldIds.question}
-										ref={questionInputRef}
-										name="question"
-										value={newQuestion.question}
-										onChange={handleInputChange}
-										rows={3}
-										placeholder="Enter your interview question..."
-										disabled={savingQuestion}
-										className={`w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed ${errors.question ? "border-red-500" : ""}`}
-									/>
-									{errors.question && (
-										<p className="text-red-500 text-sm mt-1">{errors.question}</p>
-									)}
-								</div>
+								   <div>
+									   <label className="inline-flex items-center mb-2">
+										   <input
+											   type="checkbox"
+											   name="sample"
+											   checked={!!newQuestion.sample}
+											   onChange={handleInputChange}
+											   disabled={savingQuestion}
+											   className="mr-2"
+										   />
+										   <span className="text-sm text-gray-700">Sample Question</span>
+									   </label>
+								   </div>
+								   <div>
+									   <label
+										   htmlFor={formFieldIds.question}
+										   className="block text-sm font-medium text-gray-700 mb-1"
+									   >
+										   Question *
+									   </label>
+									   <textarea
+										   id={formFieldIds.question}
+										   ref={questionInputRef}
+										   name="question"
+										   value={newQuestion.question}
+										   onChange={handleInputChange}
+										   rows={3}
+										   placeholder="Enter your interview question..."
+										   disabled={savingQuestion}
+										   className={`w-full border rounded-md px-3 py-2 disabled:bg-gray-100 disabled:cursor-not-allowed ${errors.question ? "border-red-500" : ""}`}
+									   />
+									   {errors.question && (
+										   <p className="text-red-500 text-sm mt-1">{errors.question}</p>
+									   )}
+								   </div>
 
 								<div>
 									<label
