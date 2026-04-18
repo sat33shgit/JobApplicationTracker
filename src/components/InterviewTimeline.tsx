@@ -63,6 +63,7 @@ type InterviewRecord = {
 	interviewDate: string;
 	contacts: ContactInfo[];
 	status: string;
+	interviewSubStatus: string;
 	statusHistory: string;
 	hrPerson: ContactInfo;
 };
@@ -73,6 +74,7 @@ type PieLabelProps = {
 	midAngle: number;
 	outerRadius: number;
 	percent?: number;
+	value?: number;
 	index: number;
 };
 
@@ -238,6 +240,11 @@ const toInterviewRecord = (
 		),
 		contacts,
 		status: formatSourceStatus(record.status),
+		interviewSubStatus: String(
+			(record as unknown as { interview_sub_status?: unknown }).interview_sub_status ??
+				(record as unknown as { interviewSubStatus?: unknown }).interviewSubStatus ??
+				"",
+		).trim(),
 		statusHistory:
 			getTextValue(record.statusNotes).trim() ||
 			getTextValue(record.status_notes).trim() ||
@@ -247,19 +254,19 @@ const toInterviewRecord = (
 };
 
 const renderPieLabel = (props: PieLabelProps) => {
-	const { cx, cy, midAngle, outerRadius, percent, index } = props;
+	const { cx, cy, midAngle, outerRadius, value, index } = props;
 	const rad = Math.PI / 180;
-	const pct = Math.round((percent || 0) * 100);
-	if (pct === 0) return null;
+	const count = Number(value || 0);
+	if (!count) return null;
 
 	let extra = 18;
-	if (pct <= 2) extra += 20;
-	else if (pct <= 5) extra += 12;
+	if (count <= 1) extra += 20;
+	else if (count <= 3) extra += 12;
 
 	const radius = outerRadius + extra;
 	const xBase = cx + radius * Math.cos(-midAngle * rad);
 	const yBase = cy + radius * Math.sin(-midAngle * rad);
-	const stagger = pct <= 5 ? (index % 2 === 0 ? -8 : 8) : 0;
+	const stagger = count <= 3 ? (index % 2 === 0 ? -8 : 8) : 0;
 	const x = xBase;
 	const y = yBase + stagger;
 	const fill = chartColors[index % chartColors.length] || "#333";
@@ -273,7 +280,7 @@ const renderPieLabel = (props: PieLabelProps) => {
 			textAnchor={x > cx ? "start" : "end"}
 			dominantBaseline="central"
 		>
-			{pct}%
+			{count}
 		</text>
 	);
 };
@@ -422,6 +429,7 @@ export function InterviewTimeline({
 		const timelineCounts = new Map<string, { label: string; count: number; ts: number }>();
 		const knownStatusCounts = new Map<string, number>(statusOptions.map((status) => [status, 0]));
 		const extraStatusCounts = new Map<string, number>();
+		const subStatusCounts = new Map<string, number>();
 
 		for (const item of data) {
 			const dateSource = getDateSource(item);
@@ -446,6 +454,12 @@ export function InterviewTimeline({
 			} else {
 				extraStatusCounts.set(statusName, (extraStatusCounts.get(statusName) || 0) + 1);
 			}
+
+			// Interview sub-status chart: count only when main status is Interview and sub-status is set.
+			if (statusName === "Interview") {
+				const sub = String(item.interviewSubStatus || "").trim();
+				if (sub) subStatusCounts.set(sub, (subStatusCounts.get(sub) || 0) + 1);
+			}
 		}
 
 		const timelineData = Array.from(timelineCounts.values())
@@ -459,11 +473,18 @@ export function InterviewTimeline({
 			...Array.from(extraStatusCounts.entries()).map(([name, value]) => ({ name, value })),
 		].filter((entry) => entry.value > 0);
 		const statusTotal = visibleStatusData.reduce((sum, entry) => sum + entry.value, 0);
+		const subStatusData = Array.from(subStatusCounts.entries())
+			.map(([name, value]) => ({ name, value }))
+			.filter((entry) => entry.value > 0)
+			.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+		const subStatusTotal = subStatusData.reduce((sum, entry) => sum + entry.value, 0);
 
 		return {
 			statusTotal,
 			timelineData,
 			visibleStatusData,
+			subStatusData,
+			subStatusTotal,
 		};
 	}, [data, timelineGranularity]);
 
@@ -562,6 +583,7 @@ export function InterviewTimeline({
 					<p className="text-sm text-gray-600 mt-1">
 						Track companies that responded and scheduled interviews
 					</p>
+					<p className="text-lg font-semibold text-gray-600 mt-1">Total Interviews: {data.length}</p>
 				</div>
 				<div className="flex items-center gap-2">
 					<button
@@ -589,8 +611,8 @@ export function InterviewTimeline({
 				</div>
 			</div>
 
-			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-				<div className="lg:col-span-2 bg-white rounded-lg shadow-md border border-gray-200 p-6">
+			<div className="flex flex-row flex-nowrap items-stretch gap-6 overflow-x-auto">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 flex-1 min-w-[720px]">
 					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 						<h3 className="text-lg font-medium">Applications Over Time</h3>
 						<div className="inline-flex w-fit rounded-lg bg-gray-100 p-1">
@@ -634,7 +656,7 @@ export function InterviewTimeline({
 					</div>
 				</div>
 
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 w-[280px] shrink-0">
 					<h3 className="text-lg font-medium mb-4">Application Status</h3>
 					<div className="h-80">
 						{chartStats.visibleStatusData.length > 0 ? (
@@ -674,6 +696,55 @@ export function InterviewTimeline({
 						) : (
 							<div className="h-full flex items-center justify-center text-sm text-gray-500">
 								No status data available.
+							</div>
+						)}
+					</div>
+				</div>
+
+				{/* Interview sub-status breakdown */}
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 w-[280px] shrink-0">
+					<h3 className="text-lg font-medium mb-4">Interview Sub-status</h3>
+					<div className="h-80">
+						{chartStats.subStatusData.length > 0 ? (
+							<ResponsiveContainer width="100%" height="100%">
+								<PieChart>
+									<Pie
+										data={chartStats.subStatusData}
+										cx="50%"
+										cy="45%"
+										outerRadius={70}
+										fill="#00C49F"
+										dataKey="value"
+										label={renderPieLabel}
+										labelLine={true}
+									>
+										{chartStats.subStatusData.map((entry, index) => (
+											<Cell
+												key={`substatus-cell-${entry.name}-${index}`}
+												fill={chartColors[index % chartColors.length]}
+											/>
+										))}
+									</Pie>
+									<Tooltip
+										formatter={(value, name) => {
+											const pct =
+												chartStats.subStatusTotal > 0
+													? ((Number(value) / chartStats.subStatusTotal) * 100).toFixed(1)
+													: "0";
+											return [`${value} (${pct}%)`, name];
+										}}
+									/>
+									<Legend
+										layout="horizontal"
+										verticalAlign="bottom"
+										align="center"
+										wrapperStyle={{ paddingTop: "20px" }}
+									/>
+								</PieChart>
+							</ResponsiveContainer>
+						) : (
+							<div className="h-full flex items-center justify-center text-sm text-gray-500">
+								No interview sub-status data available.
 							</div>
 						)}
 					</div>

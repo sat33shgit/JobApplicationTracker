@@ -78,6 +78,7 @@ type ApplicationRecord = {
 	role: string;
 	dateApplied: string;
 	interviewDate?: string;
+	interviewSubStatus?: string;
 	dateAppliedTs?: number;
 	status: string;
 	notes?: string;
@@ -98,6 +99,7 @@ type ApplicationFormState = {
 	role: string;
 	dateApplied: string;
 	interviewDate: string;
+	interviewSubStatus: string;
 	status: string;
 	notes: string;
 	files: ApplicationFile[];
@@ -193,6 +195,7 @@ const createEmptyApplicationForm = (): ApplicationFormState => ({
 	role: "",
 	dateApplied: getTodayISO(),
 	interviewDate: "",
+	interviewSubStatus: "",
 	status: "Applied",
 	notes: "",
 	files: [],
@@ -243,6 +246,16 @@ const statusOptions = [
 	"Paused",
 	"No Update",
 	"Closed",
+];
+
+const interviewSubStatusOptions = [
+	"Preliminary Call",
+	"Round 1",
+	"Round 2",
+	"Round 3",
+	"Round 4",
+	"Round 5",
+	"HR Round",
 ];
 
 // Colors for charts
@@ -533,6 +546,7 @@ export default function App() {
 	const [filterEndDate, setFilterEndDate] = useState("");
 	const [dateRangeError, setDateRangeError] = useState("");
 	const [selectedStatus, setSelectedStatus] = useState("");
+	const [selectedInterviewSubStatus, setSelectedInterviewSubStatus] = useState("");
 
 	// Get max allowed range based on timeframe
 	const getMaxRangeDays = (timeframe: string) => {
@@ -680,11 +694,13 @@ export default function App() {
 		setFilterEndDate("");
 		setDateRangeError("");
 		setSelectedStatus("");
+		setSelectedInterviewSubStatus("");
 		try {
 			const params = new URLSearchParams(window.location.search);
 			params.delete("start");
 			params.delete("end");
 			params.delete("status");
+			params.delete("interviewSubStatus");
 			const newQuery = params.toString();
 			const newUrl = newQuery
 				? `${window.location.pathname}?${newQuery}`
@@ -842,6 +858,7 @@ export default function App() {
 						track: r.track,
 						dateApplied,
 						interviewDate,
+						interviewSubStatus: r.interview_sub_status || "",
 						dateAppliedTs,
 						status,
 						notes: r.metadata?.notes || "",
@@ -1040,6 +1057,12 @@ export default function App() {
 				if (!searchString.includes(debouncedSearchTerm.toLowerCase())) return false;
 				// Apply status filter if selected so Applications page reflects dashboard selection
 				if (selectedStatus && app.status !== selectedStatus) return false;
+				if (
+					selectedStatus === "Interview" &&
+					selectedInterviewSubStatus &&
+					(app.interviewSubStatus || "") !== selectedInterviewSubStatus
+				)
+					return false;
 				// If a valid date range is selected, apply date filtering here so the Applications
 				// page shows only rows within the selected range when navigated from Dashboard.
 				const hasValidRange = filterStartDate && filterEndDate && !dateRangeError;
@@ -1057,6 +1080,7 @@ export default function App() {
 			filterEndDate,
 			dateRangeError,
 			selectedStatus,
+			selectedInterviewSubStatus,
 		],
 	);
 
@@ -1084,6 +1108,9 @@ export default function App() {
 		if (selectedStatus) {
 			base = base.filter((app) => app.status === selectedStatus);
 		}
+		if (selectedStatus === "Interview" && selectedInterviewSubStatus) {
+			base = base.filter((app) => (app.interviewSubStatus || "") === selectedInterviewSubStatus);
+		}
 
 		// If there's no date range, return base (which may have status applied)
 		if (!hasValidRange) return base;
@@ -1098,7 +1125,14 @@ export default function App() {
 		});
 
 		return base;
-	}, [applications, filterStartDate, filterEndDate, dateRangeError, selectedStatus]);
+	}, [
+		applications,
+		filterStartDate,
+		filterEndDate,
+		dateRangeError,
+		selectedStatus,
+		selectedInterviewSubStatus,
+	]);
 
 	const totalCompanies = useMemo(() => {
 		const set = new Set<number>();
@@ -1388,6 +1422,8 @@ export default function App() {
 			status: newApplication.status,
 			applied_date: newApplication.dateApplied,
 			interview_date: newApplication.interviewDate || undefined,
+			interview_sub_status:
+				newApplication.status === "Interview" ? (newApplication.interviewSubStatus || null) : undefined,
 			// persist notes/files in metadata; contacts are sent as top-level `contacts`
 			metadata: {
 				notes: newApplication.notes || null,
@@ -1604,6 +1640,7 @@ export default function App() {
 					interviewDate: updated.interview_date
 						? normalizeDateToInput(updated.interview_date)
 						: "",
+					interviewSubStatus: updated.interview_sub_status || "",
 					dateAppliedTs: updated.applied_date
 						? toStartOfDayTimestamp(normalizeDateToInput(updated.applied_date))
 						: 0,
@@ -1627,6 +1664,7 @@ export default function App() {
 						role: updatedApplication.role,
 						dateApplied: updatedApplication.dateApplied,
 						interviewDate: updatedApplication.interviewDate,
+						interviewSubStatus: updatedApplication.interviewSubStatus || "",
 						status: updatedApplication.status,
 						notes: updatedApplication.notes || "",
 						files: updatedApplication.files || [],
@@ -1675,6 +1713,7 @@ export default function App() {
 					role: created.title,
 					dateApplied: normalizeDateToInput(created.applied_date),
 					interviewDate: created.interview_date ? normalizeDateToInput(created.interview_date) : "",
+					interviewSubStatus: created.interview_sub_status || "",
 					dateAppliedTs: created.applied_date
 						? toStartOfDayTimestamp(normalizeDateToInput(created.applied_date))
 						: 0,
@@ -1801,6 +1840,39 @@ export default function App() {
 		}
 	};
 	const [inlineStatusSaving, setInlineStatusSaving] = useState<Record<number, boolean>>({});
+
+	// Inline interview sub-status change (applications page)
+	const handleInlineInterviewSubStatusChange = async (appId: number, subStatus: string) => {
+		setInlineInterviewSubStatusSaving((prev) => ({ ...prev, [appId]: true }));
+		try {
+			const resp = await fetch(`/api/jobs/${appId}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ interview_sub_status: subStatus || null }),
+			});
+			if (!resp.ok) throw new Error("Failed to update interview sub-status");
+			const updated = await resp.json();
+
+			setApplications((prev) =>
+				prev.map((a) =>
+					a.id === appId
+						? {
+								...a,
+								interviewSubStatus: updated.interview_sub_status || "",
+							}
+						: a,
+				),
+			);
+			toast.success("Interview sub-status updated");
+		} catch (_err) {
+			toast.error("Failed to update interview sub-status");
+		} finally {
+			setInlineInterviewSubStatusSaving((prev) => ({ ...prev, [appId]: false }));
+		}
+	};
+	const [inlineInterviewSubStatusSaving, setInlineInterviewSubStatusSaving] = useState<
+		Record<number, boolean>
+	>({});
 	const handleDelete = (id: number) => {
 		const app = applications.find((a) => a.id === id);
 		if (!app) return;
@@ -1897,6 +1969,7 @@ export default function App() {
 				dateApplied: normalizeDateToInput(app.dateApplied),
 				interviewDate:
 					app.interviewDate || (app.interview_date ? normalizeDateToInput(app.interview_date) : ""),
+				interviewSubStatus: app.interviewSubStatus || app.interview_sub_status || "",
 				status: app.status,
 				notes: app.notes || "",
 				files: app.files || [],
@@ -2478,7 +2551,11 @@ export default function App() {
 													<select
 														id="status-filter"
 														value={selectedStatus}
-														onChange={(e) => setSelectedStatus(e.target.value)}
+														onChange={(e) => {
+															const v = e.target.value;
+															setSelectedStatus(v);
+															if (v !== "Interview") setSelectedInterviewSubStatus("");
+														}}
 														className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[130px]"
 													>
 														<option value="">All Statuses</option>
@@ -2490,10 +2567,36 @@ export default function App() {
 													</select>
 												</div>
 
+												{selectedStatus === "Interview" && (
+													<div className="flex items-center gap-2">
+														<label
+															htmlFor="interview-sub-status-filter"
+															className="text-sm font-medium text-gray-600 whitespace-nowrap"
+														>
+															Sub-status:
+														</label>
+														<select
+															id="interview-sub-status-filter"
+															value={selectedInterviewSubStatus}
+															onChange={(e) => setSelectedInterviewSubStatus(e.target.value)}
+															className="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white min-w-[150px]"
+														>
+															<option value="">All</option>
+															{interviewSubStatusOptions.map((s) => (
+																<option key={s} value={s}>
+																	{s}
+																</option>
+															))}
+														</select>
+													</div>
+												)}
+
 												<button
 													type="button"
 													onClick={clearDateRange}
-													disabled={!(filterStartDate || filterEndDate || selectedStatus)}
+													disabled={
+														!(filterStartDate || filterEndDate || selectedStatus || selectedInterviewSubStatus)
+													}
 													className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm font-medium leading-normal text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 												>
 													<X className="h-4 w-4" />
@@ -3091,7 +3194,7 @@ export default function App() {
 																		{formatDisplayDate(app.dateApplied)}
 																	</td>
 																	<td className="px-4 py-3 whitespace-nowrap">
-																		<div className="relative inline-block">
+																		<div className="relative inline-flex items-center gap-2">
 																			<select
 																				value={app.status}
 																				onChange={(e) =>
@@ -3107,10 +3210,58 @@ export default function App() {
 																					</option>
 																				))}
 																			</select>
+
+																			{app.status === "Interview" && (
+																				<select
+																					value={app.interviewSubStatus || ""}
+																					onChange={(e) =>
+																						handleInlineInterviewSubStatusChange(
+																							app.id,
+																							e.target.value,
+																						)
+																					}
+																					disabled={
+																						!!inlineStatusSaving[app.id] ||
+																						!!inlineInterviewSubStatusSaving[app.id]
+																					}
+																					className="px-2 py-1 text-xs leading-5 font-semibold rounded-full border bg-white"
+																					aria-label={`Change interview sub-status for ${app.role}`}
+																				>
+																					<option value="">Sub-status...</option>
+																					{interviewSubStatusOptions.map((s) => (
+																						<option key={s} value={s}>
+																							{s}
+																						</option>
+																					))}
+																				</select>
+																			)}
 																			{inlineStatusSaving[app.id] && (
 																				<svg
 																					aria-hidden="true"
 																					className="animate-spin h-4 w-4 absolute right-[-1.5rem] top-1/2 transform -translate-y-1/2 text-gray-600"
+																					xmlns="http://www.w3.org/2000/svg"
+																					fill="none"
+																					viewBox="0 0 24 24"
+																				>
+																					<circle
+																						className="opacity-25"
+																						cx="12"
+																						cy="12"
+																						r="10"
+																						stroke="currentColor"
+																						strokeWidth="4"
+																					/>
+																					<path
+																						className="opacity-75"
+																						fill="currentColor"
+																						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																					/>
+																				</svg>
+																			)}
+																			{inlineInterviewSubStatusSaving[app.id] && !inlineStatusSaving[app.id] && (
+																				<svg
+																					aria-hidden="true"
+																					className="animate-spin h-4 w-4 text-gray-600"
 																					xmlns="http://www.w3.org/2000/svg"
 																					fill="none"
 																					viewBox="0 0 24 24"
@@ -3158,6 +3309,7 @@ export default function App() {
 																	<td className="px-6 py-3 text-sm font-medium">
 																		<div className="flex space-x-2">
 																			<button
+																				type="button"
 																				onClick={(e) => {
 																					e.stopPropagation();
 																					handleView(app.id);
@@ -3168,6 +3320,7 @@ export default function App() {
 																				<Eye className="h-5 w-5" />
 																			</button>
 																			<button
+																				type="button"
 																				onClick={(e) => {
 																					e.stopPropagation();
 																					handleEdit(app.id);
@@ -3177,6 +3330,7 @@ export default function App() {
 																				<Edit className="h-5 w-5" />
 																			</button>
 																			<button
+																				type="button"
 																				onClick={(e) => {
 																					e.stopPropagation();
 																					handleDelete(app.id);
@@ -3218,6 +3372,7 @@ export default function App() {
 
 									<div className="flex items-center justify-end space-x-2">
 										<button
+											type="button"
 											onClick={() => setCurrentPage(1)}
 											disabled={currentPage === 1}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border"}`}
@@ -3225,6 +3380,7 @@ export default function App() {
 											First
 										</button>
 										<button
+											type="button"
 											onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
 											disabled={currentPage === 1}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === 1 ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border"}`}
@@ -3235,6 +3391,7 @@ export default function App() {
 											Page {currentPage} / {totalPages}
 										</span>
 										<button
+											type="button"
 											onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
 											disabled={currentPage === totalPages}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border"}`}
@@ -3242,6 +3399,7 @@ export default function App() {
 											Next
 										</button>
 										<button
+											type="button"
 											onClick={() => setCurrentPage(totalPages)}
 											disabled={currentPage === totalPages}
 											className={`px-2 py-1 text-sm rounded-md ${currentPage === totalPages ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border"}`}
@@ -3279,10 +3437,11 @@ export default function App() {
 												<div className="flex items-center justify-between py-2">
 													<div>
 														<button
+															type="button"
 															onClick={() => {
 																returnToPreviousPage();
 															}}
-															className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+															className="px-4 py-2 border rounded-md text-transparent hover:bg-gray-50 cursor-pointer before:content-['←_Back_to_List'] before:text-gray-700"
 														>
 															← Back to List
 														</button>
@@ -3291,6 +3450,7 @@ export default function App() {
 													<div>
 														{editingId !== viewingId && (
 															<button
+																type="button"
 																onClick={() => {
 																	setReturnToViewAfterEdit(true);
 																	setEditingId(viewingId);
@@ -3324,6 +3484,7 @@ export default function App() {
 														: "Add New Application"}
 											</h2>
 											<button
+												type="button"
 												onClick={() => {
 													setShowAddForm(false);
 													setEditingId(null);
@@ -3589,6 +3750,32 @@ export default function App() {
 												))}
 											</select>
 										</div>
+
+										{newApplication.status === "Interview" && (
+											<div>
+												<label
+													htmlFor="application-interview-sub-status"
+													className="block text-sm font-medium text-gray-700 mb-1"
+												>
+													Interview Sub-status
+												</label>
+												<select
+													id="application-interview-sub-status"
+													name="interviewSubStatus"
+													value={newApplication.interviewSubStatus || ""}
+													onChange={handleInputChange}
+													disabled={formDisabled}
+													className={`w-full border rounded-md px-3 py-2 ${formDisabled ? "bg-gray-50 text-gray-700" : ""}`}
+												>
+													<option value="">Select...</option>
+													{interviewSubStatusOptions.map((s) => (
+														<option key={s} value={s}>
+															{s}
+														</option>
+													))}
+												</select>
+											</div>
+										)}
 
 										<div>
 											<label
@@ -3866,7 +4053,7 @@ export default function App() {
 												onClick={() => {
 													returnToPreviousPage();
 												}}
-												className="px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 cursor-pointer"
+												className="px-4 py-2 border rounded-md text-transparent hover:bg-gray-50 cursor-pointer before:content-['←_Back_to_List'] before:text-gray-700"
 											>
 												← Back to List
 											</button>

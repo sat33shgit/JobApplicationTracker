@@ -12,7 +12,19 @@ async function listJobs(req, res) {
 
 async function createJob(req, res) {
   try {
-    const { title, company, status, stage, applied_date, interview_date, url, location, salary, metadata } = req.body;
+    const {
+      title,
+      company,
+      status,
+      stage,
+      applied_date,
+      interview_date,
+      interview_sub_status,
+      url,
+      location,
+      salary,
+      metadata,
+    } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
     // Build initial status_notes entry: date-only in DD-MMM-YYYY, status on same line, notes on next line
     const _d = new Date();
@@ -42,8 +54,8 @@ async function createJob(req, res) {
     const colExists = contacts ? await hasContactsColumn() : false;
 
     if (contacts && colExists) {
-      const insertFields = 'title, company, status, stage, applied_date, interview_date, url, location, salary, metadata, contacts, status_notes';
-      const insertValuesPlaceholders = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12';
+      const insertFields = 'title, company, status, stage, applied_date, interview_date, interview_sub_status, url, location, salary, metadata, contacts, status_notes';
+      const insertValuesPlaceholders = '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13';
       const params = [
         title,
         company,
@@ -51,6 +63,7 @@ async function createJob(req, res) {
         stage,
         applied_date || null,
         interview_date || null,
+        interview_sub_status || null,
         url || null,
         location || null,
         salary || null,
@@ -64,8 +77,8 @@ async function createJob(req, res) {
 
     // Fallback: persist contacts inside metadata only (no top-level column)
     const result = await db.query(
-      `INSERT INTO jobs(title, company, status, stage, applied_date, interview_date, url, location, salary, metadata, status_notes)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      `INSERT INTO jobs(title, company, status, stage, applied_date, interview_date, interview_sub_status, url, location, salary, metadata, status_notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [
         title,
         company,
@@ -73,6 +86,7 @@ async function createJob(req, res) {
         stage,
         applied_date || null,
         interview_date || null,
+        interview_sub_status || null,
         url || null,
         location || null,
         salary || null,
