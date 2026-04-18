@@ -454,11 +454,10 @@ export function InterviewTimeline({
 				extraStatusCounts.set(statusName, (extraStatusCounts.get(statusName) || 0) + 1);
 			}
 
-			// Interview sub-status chart: count only when main status is Interview and sub-status is set.
-			if (statusName === "Interview") {
-				const sub = String(item.interviewSubStatus || "").trim();
-				if (sub) subStatusCounts.set(sub, (subStatusCounts.get(sub) || 0) + 1);
-			}
+			// Interview sub-status chart: count whenever sub-status is set (regardless of main status).
+			// This allows tracking interview rounds even after the application moves to Rejected/Offer/etc.
+			const sub = String(item.interviewSubStatus || "").trim();
+			if (sub) subStatusCounts.set(sub, (subStatusCounts.get(sub) || 0) + 1);
 		}
 
 		const timelineData = Array.from(timelineCounts.values())

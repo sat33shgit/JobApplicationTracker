@@ -238,7 +238,6 @@ const statusOptions = [
 	"System Rejected",
 	"AI Interview",
 	"Email Enquiry",
-	"Preliminary Call",
 	"Interview",
 	"Offer",
 	"Rejected",
