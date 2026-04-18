@@ -72,6 +72,7 @@ type PieLabelProps = {
 	cx: number;
 	cy: number;
 	midAngle: number;
+	innerRadius?: number;
 	outerRadius: number;
 	percent?: number;
 	value?: number;
@@ -254,30 +255,28 @@ const toInterviewRecord = (
 };
 
 const renderPieLabel = (props: PieLabelProps) => {
-	const { cx, cy, midAngle, outerRadius, value, index } = props;
+	const { cx, cy, midAngle, innerRadius, outerRadius, value } = props;
 	const rad = Math.PI / 180;
 	const count = Number(value || 0);
 	if (!count) return null;
 
-	let extra = 18;
-	if (count <= 1) extra += 20;
-	else if (count <= 3) extra += 12;
-
-	const radius = outerRadius + extra;
-	const xBase = cx + radius * Math.cos(-midAngle * rad);
-	const yBase = cy + radius * Math.sin(-midAngle * rad);
-	const stagger = count <= 3 ? (index % 2 === 0 ? -8 : 8) : 0;
-	const x = xBase;
-	const y = yBase + stagger;
-	const fill = chartColors[index % chartColors.length] || "#333";
+	// Place label inside the slice to avoid SVG clipping.
+	const r0 = typeof innerRadius === "number" ? innerRadius : 0;
+	const radius = r0 + (outerRadius - r0) * 0.65;
+	const x = cx + radius * Math.cos(-midAngle * rad);
+	const y = cy + radius * Math.sin(-midAngle * rad);
 
 	return (
 		<text
 			x={x}
 			y={y}
-			fill={fill}
-			fontSize={12}
-			textAnchor={x > cx ? "start" : "end"}
+			fill="#ffffff"
+			stroke="#111827"
+			strokeWidth={0.8}
+			paintOrder="stroke"
+			fontSize={13}
+			fontWeight={700}
+			textAnchor="middle"
 			dominantBaseline="central"
 		>
 			{count}
@@ -611,8 +610,8 @@ export function InterviewTimeline({
 				</div>
 			</div>
 
-			<div className="flex flex-row flex-nowrap items-stretch gap-6 overflow-x-auto">
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 flex-1 min-w-[720px]">
+			<div className="flex w-full flex-row flex-nowrap items-stretch gap-6 overflow-x-auto">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 min-w-[1600px] flex-[2_1_0%]">
 					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 						<h3 className="text-lg font-medium">Applications Over Time</h3>
 						<div className="inline-flex w-fit rounded-lg bg-gray-100 p-1">
@@ -637,7 +636,7 @@ export function InterviewTimeline({
 							<ResponsiveContainer width="100%" height="100%">
 								<BarChart
 									data={chartStats.timelineData}
-									margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+									margin={{ top: 20, right: 0, left: -40, bottom: 0 }}
 								>
 									<CartesianGrid strokeDasharray="3 3" />
 									<XAxis dataKey="label" minTickGap={24} />
@@ -656,7 +655,7 @@ export function InterviewTimeline({
 					</div>
 				</div>
 
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 w-[280px] shrink-0">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 min-w-[280px] flex-[1_1_0%]">
 					<h3 className="text-lg font-medium mb-4">Application Status</h3>
 					<div className="h-80">
 						{chartStats.visibleStatusData.length > 0 ? (
@@ -670,7 +669,7 @@ export function InterviewTimeline({
 										fill="#8884d8"
 										dataKey="value"
 										label={renderPieLabel}
-										labelLine={true}
+										labelLine={false}
 									>
 										{chartStats.visibleStatusData.map((entry, index) => (
 											<Cell key={`cell-${entry.name}-${index}`} fill={getStatusColor(entry.name)} />
@@ -702,7 +701,7 @@ export function InterviewTimeline({
 				</div>
 
 				{/* Interview sub-status breakdown */}
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 w-[280px] shrink-0">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 min-w-[280px] flex-[1_1_0%]">
 					<h3 className="text-lg font-medium mb-4">Interview Sub-status</h3>
 					<div className="h-80">
 						{chartStats.subStatusData.length > 0 ? (
@@ -716,7 +715,7 @@ export function InterviewTimeline({
 										fill="#00C49F"
 										dataKey="value"
 										label={renderPieLabel}
-										labelLine={true}
+										labelLine={false}
 									>
 										{chartStats.subStatusData.map((entry, index) => (
 											<Cell
