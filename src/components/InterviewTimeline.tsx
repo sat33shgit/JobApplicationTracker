@@ -1,21 +1,21 @@
-import { useState, useEffect, useMemo } from "react";
-import { Calendar, Mail, User, ChevronRight, Building2, MessageSquare } from "lucide-react";
+import { Building2, Calendar, ChevronRight, Mail, MessageSquare, User } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
 import {
-	BarChart,
 	Bar,
+	BarChart,
+	CartesianGrid,
+	Cell,
+	LabelList,
+	Legend,
+	Pie,
+	PieChart,
+	ResponsiveContainer,
+	Tooltip,
 	XAxis,
 	YAxis,
-	CartesianGrid,
-	Tooltip,
-	ResponsiveContainer,
-	PieChart,
-	Pie,
-	Cell,
-	Legend,
-	LabelList,
 } from "recharts";
 import { normalizeNewlines } from "../utils/text";
-import { motion, AnimatePresence } from "motion/react";
 
 type ContactInfo = {
 	name: string;
@@ -581,7 +581,9 @@ export function InterviewTimeline({
 					<p className="text-sm text-gray-600 mt-1">
 						Track companies that responded and scheduled interviews
 					</p>
-					<p className="text-lg font-semibold text-gray-600 mt-1">Total Interviews: {data.length}</p>
+					<p className="text-lg font-semibold text-gray-600 mt-1">
+						Total Interviews: {data.length}
+					</p>
 				</div>
 				<div className="flex items-center gap-2">
 					<button
@@ -609,8 +611,8 @@ export function InterviewTimeline({
 				</div>
 			</div>
 
-			<div className="flex w-full flex-row flex-nowrap items-stretch gap-6 overflow-x-auto">
-				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 min-w-[1600px] flex-[2_1_0%]">
+			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+				<div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
 					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 						<h3 className="text-lg font-medium">Applications Over Time</h3>
 						<div className="inline-flex w-fit rounded-lg bg-gray-100 p-1">
