@@ -273,66 +273,61 @@ export function InterviewQuestions() {
 		],
 	);
 
+	const [isLoading, setIsLoading] = useState(true);
+
 	useEffect(() => {
 		let mounted = true;
+		const abortController = new AbortController();
 
-		const setFromRows = (rows) => {
-			const normalized = normalizeQuestions(rows);
-			if (mounted) setQuestions(normalized);
-		};
-
-		if (cachedInterviewQuestions) {
-			setFromRows(cachedInterviewQuestions);
-			return () => {
-				mounted = false;
-			};
-		}
-
-		async function load() {
+		// Load both datasets in parallel for maximum performance
+		async function loadAllData() {
+			setIsLoading(true);
+			
 			try {
-				const resp = await fetch("/api/interview-questions");
-				if (!resp.ok) throw new Error(`Failed to load: ${resp.status}`);
-				const data = await resp.json();
-				cachedInterviewQuestions = Array.isArray(data) ? data : [];
-				setFromRows(cachedInterviewQuestions);
+				// Load from cache first for immediate rendering
+				if (cachedInterviewQuestions) {
+					setQuestions(normalizeQuestions(cachedInterviewQuestions));
+				}
+				if (cachedInterviewerQuestions) {
+					setInterviewerQuestions(normalizeInterviewerQuestions(cachedInterviewerQuestions));
+				}
+
+				// Fetch both APIs in parallel
+				const [questionsResp, interviewerResp] = await Promise.all([
+					fetch("/api/interview-questions", { signal: abortController.signal }),
+					fetch("/api/interviewer-questions", { signal: abortController.signal })
+				]);
+
+				if (!abortController.signal.aborted && mounted) {
+					if (questionsResp.ok) {
+						const questionsData = await questionsResp.json();
+						cachedInterviewQuestions = Array.isArray(questionsData) ? questionsData : [];
+						setQuestions(normalizeQuestions(cachedInterviewQuestions));
+					}
+
+					if (interviewerResp.ok) {
+						const interviewerData = await interviewerResp.json();
+						cachedInterviewerQuestions = Array.isArray(interviewerData) ? interviewerData : [];
+						setInterviewerQuestions(normalizeInterviewerQuestions(cachedInterviewerQuestions));
+					}
+				}
 			} catch (_err) {
-				// failed to load interview questions
+				// Ignore abort errors
+				if (_err.name !== 'AbortError') {
+					console.error('Failed to load questions:', _err);
+				}
+			} finally {
+				if (mounted) {
+					setIsLoading(false);
+				}
 			}
 		}
-		load();
+
+		loadAllData();
+
 		return () => {
 			mounted = false;
-		};
-	}, []);
-	useEffect(() => {
-		let mounted = true;
-
-		const setFromRows = (rows) => {
-			const normalized = normalizeInterviewerQuestions(rows);
-			if (mounted) setInterviewerQuestions(normalized);
-		};
-
-		if (cachedInterviewerQuestions) {
-			setFromRows(cachedInterviewerQuestions);
-			return () => {
-				mounted = false;
-			};
-		}
-
-		async function load() {
-			try {
-				const resp = await fetch("/api/interviewer-questions");
-				if (!resp.ok) throw new Error(`Failed to load: ${resp.status}`);
-				const data = await resp.json();
-				cachedInterviewerQuestions = Array.isArray(data) ? data : [];
-				setFromRows(cachedInterviewerQuestions);
-			} catch (_err) {
-				// failed to load interviewer questions
-			}
-		}
-		load();
-		return () => {
-			mounted = false;
+			abortController.abort();
 		};
 	}, []);
 
