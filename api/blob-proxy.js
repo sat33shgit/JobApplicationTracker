@@ -36,6 +36,9 @@ module.exports = async function (req, res) {
     const contentType = String(obj.ContentType || obj.Content_Type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
     res.setHeader('Content-Type', contentType);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Uploaded objects are immutable per key — let the browser cache them
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (obj.ContentLength) res.setHeader('Content-Length', String(obj.ContentLength));
     // Sanitize filename to prevent HTTP header injection (strip CR/LF/quotes/control chars)
     const rawName = (key || '').split('/').pop() || 'file';
     const filename = rawName.replace(/[^a-zA-Z0-9._ ()\-]/g, "_") || "file";

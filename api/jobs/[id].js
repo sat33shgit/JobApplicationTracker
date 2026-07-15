@@ -94,7 +94,8 @@ module.exports = async function (req, res) {
     if (req.method === 'DELETE') {
       // Find attachments for this job and attempt to delete stored blobs/files
       try {
-        const attsRes = await db.query('SELECT * FROM attachments WHERE job_id = $1', [id]);
+        // Single round-trip: delete rows and get them back for blob cleanup
+        const attsRes = await db.query('DELETE FROM attachments WHERE job_id = $1 RETURNING *', [id]);
         const atts = attsRes.rows || [];
         // Load blob helper lazily so we don't require it for simple GETs
         let blob = null;
@@ -105,18 +106,17 @@ module.exports = async function (req, res) {
           if (process.env.NODE_ENV !== 'production') console.warn('blob helper load failed, skipping provider deletes', re && re.message);
         }
 
-        if (blob && typeof blob.delete === 'function') {
-          for (const a of atts) {
-            try {
-              await blob.delete({ key: a.storage_key || a.key, url: a.url });
-            } catch (e) {
-              if (process.env.NODE_ENV !== 'production') console.warn('Failed to delete blob for attachment', a.id, e && e.message);
-            }
+        if (blob && typeof blob.delete === 'function' && atts.length) {
+          // Delete blobs in parallel instead of one-by-one
+          const results = await Promise.allSettled(
+            atts.map((a) => blob.delete({ key: a.storage_key || a.key, url: a.url }))
+          );
+          if (process.env.NODE_ENV !== 'production') {
+            results.forEach((r, i) => {
+              if (r.status === 'rejected') console.warn('Failed to delete blob for attachment', atts[i].id, r.reason && r.reason.message);
+            });
           }
         }
-
-        // Remove attachment rows
-        await db.query('DELETE FROM attachments WHERE job_id = $1', [id]);
       } catch (e) {
         // Log full stack for troubleshooting on hosting platforms
         console.error('Failed to delete attachments for job', id, e && e.message);

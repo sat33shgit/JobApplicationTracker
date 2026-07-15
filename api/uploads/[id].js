@@ -13,7 +13,8 @@ module.exports = async function (req, res) {
   try {
     // Handle DELETE request - delete individual attachment
     if (req.method === 'DELETE') {
-      const result = await db.query('SELECT * FROM attachments WHERE id = $1', [id]);
+      // Single round-trip: delete the row and get it back for blob cleanup
+      const result = await db.query('DELETE FROM attachments WHERE id = $1 RETURNING *', [id]);
       if (result.rowCount === 0) return res.status(404).json({ error: 'not found' });
       const att = result.rows[0];
 
@@ -33,9 +34,6 @@ module.exports = async function (req, res) {
         }
       }
 
-      // Delete from database
-      await db.query('DELETE FROM attachments WHERE id = $1', [id]);
-
       // Return the deleted attachment info so client can update state
       return res.status(200).json({ deleted: true, id: att.id, job_id: att.job_id });
     }
@@ -53,6 +51,8 @@ module.exports = async function (req, res) {
       if (!fs.existsSync(localPath)) return res.status(404).json({ error: 'file not found' });
       res.setHeader('Content-Type', att.content_type || 'application/octet-stream');
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Attachments are immutable — allow browser caching
+      res.setHeader('Cache-Control', 'private, max-age=3600');
       const stream = fs.createReadStream(localPath);
       return stream.pipe(res);
     }
