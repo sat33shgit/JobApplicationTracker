@@ -8,7 +8,7 @@ module.exports = async function (req, res) {
   const pathname = parsed.pathname || '';
   let id = (pathname.split('/').filter(Boolean).pop() || '').toString();
   id = decodeURIComponent((id || '').split('?')[0].split('#')[0]);
-  if (!id) return res.status(400).json({ error: 'missing id' });
+  if (!id || !/^\d+$/.test(id)) return res.status(400).json({ error: 'invalid id' });
 
   try {
     // Handle DELETE request - delete individual attachment
@@ -46,9 +46,13 @@ module.exports = async function (req, res) {
     const att = result.rows[0];
     // If attachment URL is a local path (/uploads/...), serve the file from public/uploads
     if (att.url && att.url.startsWith('/uploads/')) {
-      const localPath = path.join(process.cwd(), 'public', att.url.replace(/^\//, ''));
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      const localPath = path.resolve(process.cwd(), 'public', att.url.replace(/^\//, ''));
+      // Prevent path traversal: resolved path must stay inside the uploads dir
+      if (!localPath.startsWith(uploadsDir + path.sep)) return res.status(400).json({ error: 'invalid file path' });
       if (!fs.existsSync(localPath)) return res.status(404).json({ error: 'file not found' });
       res.setHeader('Content-Type', att.content_type || 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       const stream = fs.createReadStream(localPath);
       return stream.pipe(res);
     }

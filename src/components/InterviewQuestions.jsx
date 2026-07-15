@@ -273,7 +273,7 @@ export function InterviewQuestions() {
 		],
 	);
 
-	const [isLoading, setIsLoading] = useState(true);
+	const [_isLoading, setIsLoading] = useState(true);
 
 	useEffect(() => {
 		let mounted = true;

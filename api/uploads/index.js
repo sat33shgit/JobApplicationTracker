@@ -1,7 +1,9 @@
 const db = require('../../lib/server/db');
 const blob = require('../../lib/server/blob');
-const fs = require('fs');
-const path = require('path');
+const { sanitizeFilename, isSafeStorageKey } = require('../../lib/server/request-utils');
+
+// Max upload size (base64-decoded): 15 MB
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 // POST /api/uploads
 // Body JSON: { jobId, filename, contentBase64, contentType }
@@ -25,11 +27,20 @@ module.exports = async function (req, res) {
       return parts.concat(segments).join('/');
     }
 
-    const { jobId, filename, contentBase64, contentType, url, storageKey, size, uploadUrl } = req.body;
+    // NOTE: `uploadUrl` is intentionally NOT read from the client anymore.
+    // Accepting a client-supplied upload URL let callers make the server PUT
+    // data to an arbitrary URL (SSRF).
+    const { jobId, filename, contentBase64, contentType, url, storageKey, size } = req.body || {};
+
+    // Validate jobId if provided
+    if (jobId !== undefined && jobId !== null && !/^\d+$/.test(String(jobId))) {
+      return res.status(400).json({ error: 'invalid jobId' });
+    }
 
     // If client already uploaded the bytes to a signed URL and sends metadata (url/storageKey), insert directly
     const hasR2 = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET;
     if (url && storageKey) {
+      if (!isSafeStorageKey(storageKey)) return res.status(400).json({ error: 'invalid storageKey' });
       // Prefer any URL returned by the client/provider. If none, and R2 is configured
       // try to construct a public URL from R2 endpoint or public prefix.
       let urlToSave = url || null;
@@ -47,9 +58,16 @@ module.exports = async function (req, res) {
     }
 
     // Otherwise expect contentBase64
-    const { jobId: _jobId, filename: _filename, contentBase64: _contentBase64, contentType: _contentType } = req.body;
-    if (!_filename || !_contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
+    const { filename: _rawFilename, contentBase64: _contentBase64, contentType: _contentType } = req.body || {};
+    if (!_rawFilename || !_contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
+    // Sanitize filename to prevent path traversal into arbitrary directories
+    const _filename = sanitizeFilename(_rawFilename);
+    if (!_filename) return res.status(400).json({ error: 'invalid filename' });
+    if (typeof _contentBase64 !== 'string' || _contentBase64.length > Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 4) {
+      return res.status(413).json({ error: 'file too large' });
+    }
     const buffer = Buffer.from(_contentBase64, 'base64');
+    if (buffer.length > MAX_UPLOAD_BYTES) return res.status(413).json({ error: 'file too large' });
 
     // Create a DB record first so we can use its id as part of the storage key/path in R2.
     let inserted;
@@ -71,14 +89,13 @@ module.exports = async function (req, res) {
 
     let saved;
     try {
-      // If client provided an uploadUrl (signed URL), pass it through so server can PUT bytes server-side.
       // Prefer using the storageFilename as the key when saving to R2/local providers.
-      saved = await blob.save({ filename: storageFilename, buffer, contentType: _contentType, uploadUrl });
+      saved = await blob.save({ filename: storageFilename, buffer, contentType: _contentType });
     } catch (err) {
       console.error('blob.save failed:', err && err.message);
       // Attempt to clean up the DB row we created to avoid orphaned records
       try { await db.query('DELETE FROM attachments WHERE id=$1', [inserted.id]); } catch (e) { if (process.env.NODE_ENV !== 'production') console.warn('failed to delete attachment row after save error', e && e.message); }
-      return res.status(502).json({ error: 'remote upload failed', detail: err && err.message });
+      return res.status(502).json({ error: 'remote upload failed' });
     }
 
     // Prefer saved.url if available. If R2 is configured but saved.url is null,

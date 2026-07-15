@@ -7,7 +7,7 @@ module.exports = async function (req, res) {
   let id = (pathname.split('/').filter(Boolean).pop() || '').toString();
   // strip query/hash if present (e.g., "14?id=14") and decode
   id = decodeURIComponent((id || '').split('?')[0].split('#')[0]);
-  if (!id) return res.status(400).json({ error: 'missing id' });
+  if (!id || !/^\d+$/.test(id)) return res.status(400).json({ error: 'invalid id' });
 
   try {
     if (req.method === 'GET') {

@@ -51,10 +51,18 @@ if (process.env.DATABASE_URL) {
 const API_ROOT = path.join(__dirname, 'api');
 const SERVER_LIB_ROOT = path.join(__dirname, 'lib', 'server');
 
+const MAX_BODY_BYTES = 25 * 1024 * 1024; // 25 MB cap to prevent memory-exhaustion DoS
+
 function parseJSONBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
+    let received = 0;
     req.on('data', (chunk) => {
+      received += chunk.length;
+      if (received > MAX_BODY_BYTES) {
+        req.destroy();
+        return reject(new Error('request body too large'));
+      }
       data += chunk;
     });
     req.on('end', () => {
@@ -185,8 +193,12 @@ async function routeApi(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
-  // Simple CORS for local dev
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS for local dev: only allow localhost origins (wildcard would let any
+  // website a local browser visits call this API)
+  const origin = req.headers.origin || '';
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.end();

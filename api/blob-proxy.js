@@ -1,4 +1,16 @@
 const blob = require('../lib/server/blob');
+const { isSafeStorageKey } = require('../lib/server/request-utils');
+
+const isProd = process.env.NODE_ENV === 'production';
+
+// Content types that are safe to render inline. Anything else (notably
+// text/html and image/svg+xml, which can execute scripts) is forced to
+// download as an attachment to prevent stored XSS from uploaded files.
+const INLINE_SAFE = new Set([
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'text/plain',
+]);
 
 module.exports = async function (req, res) {
   if (req.method !== 'GET') {
@@ -9,6 +21,7 @@ module.exports = async function (req, res) {
   try {
     const key = req.query && (req.query.key || req.query.k) || req.url && (new URL(req.url, 'http://localhost')).searchParams.get('key');
     if (!key) return res.status(400).json({ error: 'key query parameter required' });
+    if (!isSafeStorageKey(key)) return res.status(400).json({ error: 'invalid key' });
 
     // Fetch object from R2
     let obj;
@@ -16,14 +29,18 @@ module.exports = async function (req, res) {
       obj = await blob.getObject(key);
     } catch (err) {
       console.error('blob.getObject failed', err && err.message);
-      return res.status(502).json({ error: 'failed to fetch object', detail: err && err.message });
+      return res.status(502).json({ error: 'failed to fetch object' });
     }
 
     // Set content-type and disposition
-    const contentType = obj.ContentType || obj.Content_Type || 'application/octet-stream';
+    const contentType = String(obj.ContentType || obj.Content_Type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
     res.setHeader('Content-Type', contentType);
-    const filename = (key || '').split('/').pop() || 'file';
-    res.setHeader('Content-Disposition', `inline; filename="${filename.replace(/\"/g, '')}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Sanitize filename to prevent HTTP header injection (strip CR/LF/quotes/control chars)
+    const rawName = (key || '').split('/').pop() || 'file';
+    const filename = rawName.replace(/[^a-zA-Z0-9._ ()\-]/g, "_") || "file";
+    const disposition = INLINE_SAFE.has(contentType) ? 'inline' : 'attachment';
+    res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
 
     const body = obj.Body;
     if (body && typeof body.pipe === 'function') {

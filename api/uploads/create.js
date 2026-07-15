@@ -7,8 +7,11 @@ module.exports = async function (req, res) {
   }
 
   try {
-    const { filename, contentType } = req.body;
-    if (!filename) return res.status(400).json({ error: 'filename required' });
+    const { filename: rawFilename, contentType } = req.body || {};
+    if (!rawFilename) return res.status(400).json({ error: 'filename required' });
+    const { sanitizeFilename } = require('../../lib/server/request-utils');
+    const filename = sanitizeFilename(rawFilename);
+    if (!filename) return res.status(400).json({ error: 'invalid filename' });
 
     // ask blob helper to create a signed upload URL (this delegates to Vercel API)
     if (typeof blob.createSignedUrl !== 'function') {
@@ -34,8 +37,8 @@ module.exports = async function (req, res) {
     } catch (err) {
       console.error('create upload url failed', err && err.message);
       if (err && err.stack) console.error(err.stack);
-      // Surface error details to client to aid debugging (do not include secrets)
-      return res.status(502).json({ error: 'failed to create upload url', detail: err && err.message });
+      // Only surface error details outside production
+      return res.status(502).json({ error: 'failed to create upload url', detail: process.env.NODE_ENV === 'production' ? undefined : (err && err.message) });
     }
   } catch (err) {
     console.error('create upload url failed', err && err.message);

@@ -107,9 +107,13 @@ async function createJob(req, res) {
 // Attach a file to a job via base64 payload
 async function uploadAttachment(req, res) {
   try {
-    const { jobId, filename, contentBase64, contentType } = req.body;
-    if (!filename || !contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
+    const { jobId, filename: rawFilename, contentBase64, contentType } = req.body;
+    if (!rawFilename || !contentBase64) return res.status(400).json({ error: 'filename and contentBase64 required' });
+    const { sanitizeFilename } = require('../../lib/server/request-utils');
+    const filename = sanitizeFilename(rawFilename);
+    if (!filename) return res.status(400).json({ error: 'invalid filename' });
     const buffer = Buffer.from(contentBase64, 'base64');
+    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ error: 'file too large' });
     const blob = require('../../lib/server/blob');
     const saved = await blob.save({ filename, buffer, contentType });
     const urlToSave = (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) ? null : saved.url;
